@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "682901480654",
+    "project_id": "aivlm-ic",
+    "storage_bucket": "aivlm-ic.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:682901480654:android:6fd573cdab76a918e21c9f",
+        "android_client_info": {
+          "package_name": "com.aivlm.industrycommerce"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBMyRWxH5RY87NHIBDWQvDUJrJ0qcP0Jqc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:682901480654:android:ffddea8ed3c3be86e21c9f",
+        "android_client_info": {
+          "package_name": "com.example.aivlm_ic"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBMyRWxH5RY87NHIBDWQvDUJrJ0qcP0Jqc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
