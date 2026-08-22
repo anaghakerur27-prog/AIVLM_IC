@@ -1,6 +1,7 @@
 {
   "project_info": {
     "project_number": "682901480654",
+    "firebase_url": "https://aivlm-ic-default-rtdb.firebaseio.com",
     "project_id": "aivlm-ic",
     "storage_bucket": "aivlm-ic.firebasestorage.app"
   },
@@ -10,6 +11,25 @@
         "mobilesdk_app_id": "1:682901480654:android:6fd573cdab76a918e21c9f",
         "android_client_info": {
           "package_name": "com.aivlm.industrycommerce"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBMyRWxH5RY87NHIBDWQvDUJrJ0qcP0Jqc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:682901480654:android:c03106d5b7d284e6e21c9f",
+        "android_client_info": {
+          "package_name": "com.example.aivlm_admin"
         }
       },
       "oauth_client": [],

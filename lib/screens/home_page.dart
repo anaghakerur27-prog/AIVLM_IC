@@ -5,7 +5,7 @@ import 'business_details_screen.dart';
 import 'search_business_screen.dart';
 import 'post_enquiry_screen.dart';
 import 'settings_screen.dart';
-import 'profile_screen.dart';
+import 'member_profile_router.dart';
 import 'all_enquiries_screen.dart';
 
 class DashboardPage extends StatefulWidget {
@@ -350,8 +350,14 @@ class _DashboardPageState extends State<DashboardPage> {
     return SearchBusinessScreen(memberId: widget.memberId);
   }
 
+  /// Profile tab now routes to the right profile screen for this member:
+  /// business members get the existing ProfileScreen (used internally by
+  /// MemberProfileRouter), non-business and student members get the
+  /// simpler NonBusinessProfileScreen. The router decides which one to
+  /// show based on the member's `userType` field in Firestore, so this
+  /// tab doesn't need to guess.
   Widget profileTab() {
-    return const ProfileScreen();
+    return MemberProfileRouter(memberId: widget.memberId);
   }
 
   Widget settingsTab() {

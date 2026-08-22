@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 
-import 'welcome_screen.dart';
-// import 'firebase_options.dart'; // if you use flutterfire configure
+import 'screens/login_page.dart';
+import 'firebase_options.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   await Firebase.initializeApp(
-    // options: DefaultFirebaseOptions.currentPlatform,
+    options: DefaultFirebaseOptions.currentPlatform,
   );
 
   runApp(const MyApp());
@@ -23,9 +23,9 @@ class MyApp extends StatelessWidget {
       title: 'AIVLM-I&C',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(primarySwatch: Colors.blue),
-      // WelcomeScreen (Member / Not a Member) is now the first screen
-      // instead of LoginPage.
-      home: const WelcomeScreen(),
+      // App now opens directly on LoginPage. Unregistered numbers are
+      // routed to WelcomeScreen (category picker) from inside LoginPage.
+      home: const LoginPage(),
     );
   }
 }

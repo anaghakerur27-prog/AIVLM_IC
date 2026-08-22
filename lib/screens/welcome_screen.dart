@@ -1,15 +1,82 @@
 import 'package:flutter/material.dart';
 
-import 'login_page.dart';
 import 'register_page.dart';
 
 class WelcomeScreen extends StatelessWidget {
-  const WelcomeScreen({super.key});
+  final String phone;
+
+  const WelcomeScreen({super.key, required this.phone});
+
+  void openRegister(BuildContext context, String memberType) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => RegisterScreen(phone: phone, memberType: memberType),
+      ),
+    );
+  }
+
+  /// Category button — filled (primary) or outlined style.
+  Widget categoryButton({
+    required BuildContext context,
+    required String title,
+    required IconData icon,
+    required bool filled,
+    required VoidCallback onPressed,
+  }) {
+    return SizedBox(
+      width: double.infinity,
+      height: 55,
+      child: filled
+          ? ElevatedButton.icon(
+              onPressed: onPressed,
+              icon: Icon(icon),
+              label: Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.5,
+                ),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(15),
+                ),
+                elevation: 3,
+              ),
+            )
+          : OutlinedButton.icon(
+              onPressed: onPressed,
+              icon: Icon(icon),
+              label: Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.blue,
+                side: const BorderSide(color: Colors.blue, width: 1.5),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(15),
+                ),
+              ),
+            ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.grey.shade100,
+      appBar: AppBar(
+        title: const Text("Select Category"),
+        centerTitle: true,
+      ),
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -18,7 +85,7 @@ class WelcomeScreen extends StatelessWidget {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const SizedBox(height: 40),
+                  const SizedBox(height: 20),
 
                   /// LOGO
                   Container(
@@ -40,8 +107,6 @@ class WelcomeScreen extends StatelessWidget {
                       child: Image.asset(
                         'assets/images/logo.png',
                         fit: BoxFit.contain,
-                        // Fallback icon in case the logo asset is
-                        // missing / not yet added to pubspec.yaml.
                         errorBuilder: (context, error, stackTrace) {
                           return const Icon(
                             Icons.account_balance,
@@ -77,70 +142,51 @@ class WelcomeScreen extends StatelessWidget {
                     ),
                   ),
 
-                  const SizedBox(height: 60),
+                  const SizedBox(height: 20),
 
-                  /// MEMBER BUTTON
-                  SizedBox(
-                    width: double.infinity,
-                    height: 55,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(15),
-                        ),
-                        elevation: 3,
-                      ),
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const LoginPage(),
-                          ),
-                        );
-                      },
-                      child: const Text(
-                        "MEMBER",
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                    ),
+                  const Text(
+                    "You're not registered yet.\nPlease select your category to continue",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 14, color: Colors.grey),
+                  ),
+
+                  const SizedBox(height: 40),
+
+                  /// BUSINESS
+                  categoryButton(
+                    context: context,
+                    title: "BUSINESS",
+                    icon: Icons.business,
+                    filled: true,
+                    onPressed: () {
+                      openRegister(context, "business");
+                    },
                   ),
 
                   const SizedBox(height: 16),
 
-                  /// NOT A MEMBER BUTTON
-                  SizedBox(
-                    width: double.infinity,
-                    height: 55,
-                    child: OutlinedButton(
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.blue,
-                        side: const BorderSide(color: Colors.blue, width: 1.5),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(15),
-                        ),
-                      ),
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const RegisterScreen(phone: ""),
-                          ),
-                        );
-                      },
-                      child: const Text(
-                        "NOT A MEMBER? REGISTER",
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
+                  /// NON-BUSINESS
+                  categoryButton(
+                    context: context,
+                    title: "NON-BUSINESS",
+                    icon: Icons.person,
+                    filled: false,
+                    onPressed: () {
+                      openRegister(context, "non_business");
+                    },
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  /// STUDENT
+                  categoryButton(
+                    context: context,
+                    title: "STUDENT",
+                    icon: Icons.school,
+                    filled: false,
+                    onPressed: () {
+                      openRegister(context, "student");
+                    },
                   ),
 
                   const SizedBox(height: 40),
