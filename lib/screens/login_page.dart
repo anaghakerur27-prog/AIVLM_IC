@@ -114,22 +114,20 @@ class _LoginPageState extends State<LoginPage> {
         },
 
         verificationFailed: (FirebaseAuthException e) {
-  debugPrint('====================================');
-  debugPrint('FIREBASE PHONE AUTH ERROR');
-  debugPrint('ERROR CODE: ${e.code}');
-  debugPrint('ERROR MESSAGE: ${e.message}');
-  debugPrint('====================================');
+          debugPrint('====================================');
+          debugPrint('FIREBASE PHONE AUTH ERROR');
+          debugPrint('ERROR CODE: ${e.code}');
+          debugPrint('ERROR MESSAGE: ${e.message}');
+          debugPrint('====================================');
 
-  if (!mounted) return;
+          if (!mounted) return;
 
-  setState(() {
-    isLoading = false;
-  });
+          setState(() {
+            isLoading = false;
+          });
 
-  showMessage(
-    '${e.code}: ${e.message}',
-  );
-},
+          showMessage('${e.code}: ${e.message}');
+        },
 
         codeSent: (String newVerificationId, int? resendToken) {
           if (!mounted) return;
@@ -149,20 +147,20 @@ class _LoginPageState extends State<LoginPage> {
         },
       );
     } catch (e, stackTrace) {
-  debugPrint('====================================');
-  debugPrint('OTP SEND ERROR');
-  debugPrint('ERROR: $e');
-  debugPrint('STACK TRACE: $stackTrace');
-  debugPrint('====================================');
+      debugPrint('====================================');
+      debugPrint('OTP SEND ERROR');
+      debugPrint('ERROR: $e');
+      debugPrint('STACK TRACE: $stackTrace');
+      debugPrint('====================================');
 
-  if (!mounted) return;
+      if (!mounted) return;
 
-  setState(() {
-    isLoading = false;
-  });
+      setState(() {
+        isLoading = false;
+      });
 
-  showMessage("Unable to send OTP: $e");
-}
+      showMessage("Unable to send OTP: $e");
+    }
   }
 
   /// Verify OTP entered by the member.
@@ -390,8 +388,12 @@ class _LoginPageState extends State<LoginPage> {
                   child: Padding(
                     padding: const EdgeInsets.all(15),
 
+                    // NOTE: pubspec.yaml declares
+                    // assets/images/logo.jpeg (not .png) — this path
+                    // must match exactly or Image.asset silently falls
+                    // through to errorBuilder.
                     child: Image.asset(
-                      'assets/images/logo.png',
+                      'assets/images/logo.jpeg',
 
                       height: 120,
 

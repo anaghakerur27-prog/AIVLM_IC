@@ -105,7 +105,7 @@ class WelcomeScreen extends StatelessWidget {
                     child: Padding(
                       padding: const EdgeInsets.all(18),
                       child: Image.asset(
-                        'assets/images/logo.png',
+                        'assets/images/logo.jpeg',
                         fit: BoxFit.contain,
                         errorBuilder: (context, error, stackTrace) {
                           return const Icon(
