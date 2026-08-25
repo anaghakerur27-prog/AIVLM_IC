@@ -36,7 +36,7 @@ flutter:
   uses-material-design: true
 
   assets:
-    - assets/images/logo.png
+    - assets/images/logo.jpeg
 
 flutter_native_splash:
   color: "#FFFFFF"

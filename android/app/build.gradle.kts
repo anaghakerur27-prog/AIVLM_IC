@@ -18,7 +18,10 @@ plugins {
 }
 
 android {
-    namespace = "com.example.aivlm_ic"
+    // IMPORTANT:
+    // This must match the Firebase Android app configuration.
+    namespace = "com.aivlm.industrycommerce"
+
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -31,7 +34,11 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.aivlm_ic"
+        // IMPORTANT:
+        // This MUST match Firebase:
+        // com.aivlm.industrycommerce
+        applicationId = "com.aivlm.industrycommerce"
+
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
@@ -46,11 +53,14 @@ android {
             storeFile = File(
                 project.projectDir,
                 keystoreProperties["storeFile"] as String
-)
+            )
+
             storePassword =
                 keystoreProperties["storePassword"] as String
+
             keyAlias =
                 keystoreProperties["keyAlias"] as String
+
             keyPassword =
                 keystoreProperties["keyPassword"] as String
         }
@@ -58,7 +68,6 @@ android {
 
     buildTypes {
         release {
-
             // Use release keystore
             signingConfig =
                 signingConfigs.getByName("release")

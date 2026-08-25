@@ -46,15 +46,17 @@ class DefaultFirebaseOptions {
     messagingSenderId: '682901480654',
     projectId: 'aivlm-ic',
     authDomain: 'aivlm-ic.firebaseapp.com',
+    databaseURL: 'https://aivlm-ic-default-rtdb.firebaseio.com',
     storageBucket: 'aivlm-ic.firebasestorage.app',
     measurementId: 'G-LMKYDW8MGK',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyBMyRWxH5RY87NHIBDWQvDUJrJ0qcP0Jqc',
-    appId: '1:682901480654:android:ffddea8ed3c3be86e21c9f',
+    appId: '1:682901480654:android:6fd573cdab76a918e21c9f',
     messagingSenderId: '682901480654',
     projectId: 'aivlm-ic',
+    databaseURL: 'https://aivlm-ic-default-rtdb.firebaseio.com',
     storageBucket: 'aivlm-ic.firebasestorage.app',
   );
   static const FirebaseOptions ios = FirebaseOptions(
@@ -62,6 +64,7 @@ class DefaultFirebaseOptions {
     appId: '1:682901480654:ios:5d43c1c583d8a743e21c9f',
     messagingSenderId: '682901480654',
     projectId: 'aivlm-ic',
+    databaseURL: 'https://aivlm-ic-default-rtdb.firebaseio.com',
     storageBucket: 'aivlm-ic.firebasestorage.app',
     iosBundleId: 'com.example.aivlmIc',
   );
@@ -70,6 +73,7 @@ class DefaultFirebaseOptions {
     appId: '1:682901480654:ios:5d43c1c583d8a743e21c9f',
     messagingSenderId: '682901480654',
     projectId: 'aivlm-ic',
+    databaseURL: 'https://aivlm-ic-default-rtdb.firebaseio.com',
     storageBucket: 'aivlm-ic.firebasestorage.app',
     iosBundleId: 'com.example.aivlmIc',
   );
@@ -80,6 +84,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: '682901480654',
     projectId: 'aivlm-ic',
     authDomain: 'aivlm-ic.firebaseapp.com',
+    databaseURL: 'https://aivlm-ic-default-rtdb.firebaseio.com',
     storageBucket: 'aivlm-ic.firebasestorage.app',
     measurementId: 'G-N85VKS67V9',
   );

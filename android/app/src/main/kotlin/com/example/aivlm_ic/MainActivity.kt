@@ -1,4 +1,4 @@
-package com.example.aivlm_ic
+package com.aivlm.industrycommerce
 
 import io.flutter.embedding.android.FlutterActivity
 

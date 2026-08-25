@@ -54,10 +54,9 @@ class _LoginPageState extends State<LoginPage> {
 
   /// Main login function.
   ///
-  /// 1. Check phone number.
-  /// 2. Search members collection.
-  /// 3. If registered -> send OTP.
-  /// 4. If not registered -> WelcomeScreen (pick a category, then register).
+  /// Every phone number is verified via OTP first — whether the member
+  /// is already registered or not. Once the OTP is confirmed,
+  /// _routeAfterOtpVerified() decides where they go next.
   Future<void> login() async {
     final enteredPhone = phoneController.text.trim();
 
@@ -77,49 +76,7 @@ class _LoginPageState extends State<LoginPage> {
       isLoading = true;
     });
 
-    try {
-      final member = await FirebaseFirestore.instance
-          .collection('members')
-          .doc(phone)
-          .get();
-
-      if (!mounted) return;
-
-      if (member.exists) {
-        /*
-         * MEMBER ALREADY REGISTERED
-         *
-         * Send Firebase OTP.
-         */
-        await sendOtp(phone);
-      } else {
-        /*
-         * MEMBER DOES NOT EXIST
-         *
-         * Send them to the Welcome Screen so they can pick a
-         * category (Business / Non-Business / Student) before
-         * registering.
-         */
-        setState(() {
-          isLoading = false;
-        });
-
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => WelcomeScreen(phone: phone),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          isLoading = false;
-        });
-
-        showMessage("Error: $e");
-      }
-    }
+    await sendOtp(phone);
   }
 
   /// Send OTP using Firebase Phone Authentication.
@@ -136,14 +93,15 @@ class _LoginPageState extends State<LoginPage> {
           /*
            * Android can sometimes automatically detect the OTP.
            *
-           * We still sign in automatically here.
+           * We still sign in automatically here, then run the same
+           * routing decision as manual OTP entry.
            */
           try {
             await FirebaseAuth.instance.signInWithCredential(credential);
 
             if (!mounted) return;
 
-            await loginAfterOtp(phone);
+            await _routeAfterOtpVerified(phone);
           } catch (e) {
             if (mounted) {
               setState(() {
@@ -156,26 +114,22 @@ class _LoginPageState extends State<LoginPage> {
         },
 
         verificationFailed: (FirebaseAuthException e) {
-          if (!mounted) return;
+  debugPrint('====================================');
+  debugPrint('FIREBASE PHONE AUTH ERROR');
+  debugPrint('ERROR CODE: ${e.code}');
+  debugPrint('ERROR MESSAGE: ${e.message}');
+  debugPrint('====================================');
 
-          setState(() {
-            isLoading = false;
-          });
+  if (!mounted) return;
 
-          String message = "OTP verification failed";
+  setState(() {
+    isLoading = false;
+  });
 
-          if (e.code == 'invalid-phone-number') {
-            message = "Invalid phone number";
-          } else if (e.code == 'too-many-requests') {
-            message = "Too many OTP requests. Please try again later.";
-          } else if (e.code == 'quota-exceeded') {
-            message = "OTP quota exceeded. Please try again later.";
-          } else if (e.message != null) {
-            message = e.message!;
-          }
-
-          showMessage(message);
-        },
+  showMessage(
+    '${e.code}: ${e.message}',
+  );
+},
 
         codeSent: (String newVerificationId, int? resendToken) {
           if (!mounted) return;
@@ -194,15 +148,21 @@ class _LoginPageState extends State<LoginPage> {
           verificationId = newVerificationId;
         },
       );
-    } catch (e) {
-      if (!mounted) return;
+    } catch (e, stackTrace) {
+  debugPrint('====================================');
+  debugPrint('OTP SEND ERROR');
+  debugPrint('ERROR: $e');
+  debugPrint('STACK TRACE: $stackTrace');
+  debugPrint('====================================');
 
-      setState(() {
-        isLoading = false;
-      });
+  if (!mounted) return;
 
-      showMessage("Unable to send OTP: $e");
-    }
+  setState(() {
+    isLoading = false;
+  });
+
+  showMessage("Unable to send OTP: $e");
+}
   }
 
   /// Verify OTP entered by the member.
@@ -240,7 +200,7 @@ class _LoginPageState extends State<LoginPage> {
 
       final phone = getCleanPhoneNumber(phoneController.text.trim());
 
-      await loginAfterOtp(phone);
+      await _routeAfterOtpVerified(phone);
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
 
@@ -270,7 +230,48 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
-  /// Called after successful OTP verification.
+  /// Called once the phone number has been verified via OTP (either by
+  /// auto-retrieval or manual entry). Looks up the member in Firestore
+  /// and sends them to the right place:
+  ///   - already registered  -> straight into the Dashboard
+  ///   - not registered yet  -> WelcomeScreen to pick a category, then
+  ///                            fill in their profile (no further OTP —
+  ///                            the phone is already verified)
+  Future<void> _routeAfterOtpVerified(String phone) async {
+    try {
+      final member = await FirebaseFirestore.instance
+          .collection('members')
+          .doc(phone)
+          .get();
+
+      if (!mounted) return;
+
+      if (member.exists) {
+        await loginAfterOtp(phone);
+      } else {
+        setState(() {
+          isLoading = false;
+        });
+
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => WelcomeScreen(phone: phone),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        isLoading = false;
+      });
+
+      showMessage("Error: $e");
+    }
+  }
+
+  /// Called for an already-registered member once OTP is verified.
   Future<void> loginAfterOtp(String phone) async {
     try {
       /*
@@ -473,7 +474,7 @@ class _LoginPageState extends State<LoginPage> {
                           const SizedBox(height: 8),
 
                           const Text(
-                            "Enter your registered phone number",
+                            "Enter your phone number",
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               color: Colors.grey,
@@ -661,7 +662,7 @@ class _LoginPageState extends State<LoginPage> {
                                       ),
                                     )
                                   : const Text(
-                                      "VERIFY & LOGIN",
+                                      "VERIFY & CONTINUE",
 
                                       style: TextStyle(
                                         fontSize: 18,

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'home_page.dart';
@@ -20,26 +19,27 @@ class RegisterScreen extends StatefulWidget {
 }
 
 class _RegisterScreenState extends State<RegisterScreen> {
-  // Shared
+  // Shared across all categories
   final TextEditingController nameController = TextEditingController();
   final TextEditingController phoneController = TextEditingController();
-  final TextEditingController otpController = TextEditingController();
-
-  // Business only
-  final TextEditingController memberIdController = TextEditingController();
-
-  // Non-business / Student only
   final TextEditingController emailController = TextEditingController();
   final TextEditingController addressController = TextEditingController();
+
+  // Business only — mirrors the fields in the Business ProfileScreen
+  final TextEditingController memberIdController = TextEditingController();
+  final TextEditingController businessNameController =
+      TextEditingController();
+  final TextEditingController ownerNameController = TextEditingController();
+  final TextEditingController contactNumberController =
+      TextEditingController();
+  final TextEditingController websiteController = TextEditingController();
+  final TextEditingController districtController = TextEditingController();
   final TextEditingController pincodeController = TextEditingController();
+  final TextEditingController industryTypeController =
+      TextEditingController();
+  final TextEditingController productServiceController =
+      TextEditingController();
 
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-
-  String? _verificationId;
-  bool otpSent = false;
-  bool phoneVerified = false;
-  bool isSendingOtp = false;
-  bool isVerifying = false;
   bool isRegistering = false;
 
   // Terms & Conditions
@@ -63,121 +63,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
   @override
   void initState() {
     super.initState();
+    // The phone number was already verified via OTP on the login screen,
+    // so it's just displayed here — never edited or re-verified.
     phoneController.text = widget.phone;
   }
 
-  /// STEP 1: Send OTP to the phone number entered
-  Future<void> sendOtp() async {
-    String phone = phoneController.text.trim();
-
-    if (phone.isEmpty || phone.length < 10) {
-      _showMessage("Enter a valid phone number");
-      return;
-    }
-
-    // Adjust country code prefix as needed for your user base.
-    final String formattedPhone =
-        phone.startsWith('+') ? phone : '+91$phone';
-
-    setState(() => isSendingOtp = true);
-
-    try {
-      await _auth.verifyPhoneNumber(
-        phoneNumber: formattedPhone,
-        timeout: const Duration(seconds: 60),
-
-        verificationCompleted: (PhoneAuthCredential credential) async {
-          await _confirmCredential(credential);
-        },
-
-        verificationFailed: (FirebaseAuthException e) {
-          setState(() => isSendingOtp = false);
-          _showMessage("OTP failed: ${e.message}");
-        },
-
-        codeSent: (String verificationId, int? resendToken) {
-          setState(() {
-            _verificationId = verificationId;
-            otpSent = true;
-            isSendingOtp = false;
-          });
-          _showMessage("OTP sent to $formattedPhone");
-        },
-
-        codeAutoRetrievalTimeout: (String verificationId) {
-          _verificationId = verificationId;
-        },
-      );
-    } catch (e) {
-      setState(() => isSendingOtp = false);
-      _showMessage("Error sending OTP: $e");
-    }
-  }
-
-  /// STEP 2: Verify the OTP entered
-  Future<void> verifyOtp() async {
-    String otp = otpController.text.trim();
-
-    if (_verificationId == null) {
-      _showMessage("Please request an OTP first");
-      return;
-    }
-
-    if (otp.isEmpty || otp.length < 6) {
-      _showMessage("Enter the 6-digit OTP");
-      return;
-    }
-
-    setState(() => isVerifying = true);
-
-    try {
-      final credential = PhoneAuthProvider.credential(
-        verificationId: _verificationId!,
-        smsCode: otp,
-      );
-
-      await _confirmCredential(credential);
-    } on FirebaseAuthException catch (e) {
-      setState(() => isVerifying = false);
-      _showMessage("Invalid OTP: ${e.message}");
-    } catch (e) {
-      setState(() => isVerifying = false);
-      _showMessage("Error: $e");
-    }
-  }
-
-  Future<void> _confirmCredential(PhoneAuthCredential credential) async {
-    try {
-      await _auth.signInWithCredential(credential);
-
-      if (!mounted) return;
-
-      setState(() {
-        phoneVerified = true;
-        isSendingOtp = false;
-        isVerifying = false;
-      });
-
-      _showMessage("Phone number verified");
-    } on FirebaseAuthException catch (e) {
-      _showMessage("Verification failed: ${e.message}");
-      setState(() {
-        isSendingOtp = false;
-        isVerifying = false;
-      });
-    }
-  }
-
-  /// STEP 3: Save member to Firestore once phone is verified.
-  /// Business: Name + Phone + Member ID.
-  /// Non-Business / Student: Name + Email + Phone + Address + Pincode.
-  /// Both always save userType.
+  /// Save the member to Firestore. No OTP step here — the phone number
+  /// was already verified via OTP on the login screen.
+  ///   Business: Name + Phone + Member ID + full business details.
+  ///   Non-Business / Student: Name + Phone + Address + Email.
+  /// Both always save userType and agreedToTerms.
   Future<void> registerMember() async {
-    if (!phoneVerified) {
-      _showMessage("Please verify your phone number first");
-      return;
-    }
-
     if (!agreedToTerms) {
       _showMessage("Please agree to the Terms & Conditions to continue");
       return;
@@ -188,9 +84,30 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     if (isBusiness) {
       String memberId = memberIdController.text.trim();
+      String businessName = businessNameController.text.trim();
+      String ownerName = ownerNameController.text.trim();
+      String contactNumber = contactNumberController.text.trim();
+      String email = emailController.text.trim();
+      String website = websiteController.text.trim();
+      String address = addressController.text.trim();
+      String district = districtController.text.trim();
+      String pincode = pincodeController.text.trim();
+      String industryType = industryTypeController.text.trim();
+      String productServiceDescription = productServiceController.text
+          .trim();
 
-      if (name.isEmpty || memberId.isEmpty || phone.isEmpty) {
-        _showMessage('Please fill all fields');
+      if (name.isEmpty ||
+          memberId.isEmpty ||
+          phone.isEmpty ||
+          businessName.isEmpty ||
+          ownerName.isEmpty ||
+          contactNumber.isEmpty ||
+          email.isEmpty ||
+          address.isEmpty ||
+          district.isEmpty ||
+          pincode.isEmpty ||
+          industryType.isEmpty) {
+        _showMessage('Please fill all required fields');
         return;
       }
 
@@ -204,6 +121,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
           'name': name,
           'phone': phone,
           'memberId': memberId,
+          'businessName': businessName,
+          'ownerName': ownerName,
+          'contactNumber': contactNumber,
+          'email': email,
+          'website': website,
+          'address': address,
+          'district': district,
+          'pincode': pincode,
+          'industryType': industryType,
+          'productServiceDescription': productServiceDescription,
           'userType': widget.memberType,
           'agreedToTerms': true,
           'createdAt': FieldValue.serverTimestamp(),
@@ -225,13 +152,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
     } else {
       String email = emailController.text.trim();
       String address = addressController.text.trim();
-      String pincode = pincodeController.text.trim();
 
-      if (name.isEmpty ||
-          phone.isEmpty ||
-          email.isEmpty ||
-          address.isEmpty ||
-          pincode.isEmpty) {
+      if (name.isEmpty || phone.isEmpty || email.isEmpty || address.isEmpty) {
         _showMessage('Please fill all fields');
         return;
       }
@@ -247,7 +169,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
           'phone': phone,
           'email': email,
           'address': address,
-          'pincode': pincode,
           'userType': widget.memberType,
           'agreedToTerms': true,
           'createdAt': FieldValue.serverTimestamp(),
@@ -278,88 +199,150 @@ class _RegisterScreenState extends State<RegisterScreen> {
   void dispose() {
     nameController.dispose();
     phoneController.dispose();
-    memberIdController.dispose();
     emailController.dispose();
     addressController.dispose();
+    memberIdController.dispose();
+    businessNameController.dispose();
+    ownerNameController.dispose();
+    contactNumberController.dispose();
+    websiteController.dispose();
+    districtController.dispose();
     pincodeController.dispose();
-    otpController.dispose();
+    industryTypeController.dispose();
+    productServiceController.dispose();
     super.dispose();
   }
 
-  /// Business registration fields: Name + Phone + Member ID + OTP
-  /// (Name and Phone are rendered by the shared section above this;
-  /// this widget only adds the Member ID field.)
+  Widget _field({
+    required TextEditingController controller,
+    required String label,
+    required IconData icon,
+    bool fieldsLocked = false,
+    TextInputType keyboardType = TextInputType.text,
+    int maxLines = 1,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 20),
+      child: TextField(
+        controller: controller,
+        enabled: !fieldsLocked,
+        keyboardType: keyboardType,
+        maxLines: maxLines,
+        decoration: InputDecoration(
+          labelText: label,
+          prefixIcon: Icon(icon),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(15),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Business registration fields: everything the Business ProfileScreen
+  /// shows, minus document uploads (Company Profile PDF / Visiting Card)
+  /// — those can be added afterwards from the Profile tab, which already
+  /// supports uploading them.
   Widget businessFields(bool fieldsLocked) {
     return Column(
       children: [
-        TextField(
+        _field(
           controller: memberIdController,
-          enabled: !fieldsLocked,
-          decoration: InputDecoration(
-            labelText: "Member ID",
-            prefixIcon: const Icon(Icons.badge),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(15),
-            ),
-          ),
+          label: "Member ID",
+          icon: Icons.badge,
+          fieldsLocked: fieldsLocked,
         ),
-        const SizedBox(height: 20),
+        _field(
+          controller: businessNameController,
+          label: "Business Name",
+          icon: Icons.storefront,
+          fieldsLocked: fieldsLocked,
+        ),
+        _field(
+          controller: ownerNameController,
+          label: "Owner Name",
+          icon: Icons.person_outline,
+          fieldsLocked: fieldsLocked,
+        ),
+        _field(
+          controller: contactNumberController,
+          label: "Contact Number",
+          icon: Icons.call,
+          keyboardType: TextInputType.phone,
+          fieldsLocked: fieldsLocked,
+        ),
+        _field(
+          controller: emailController,
+          label: "Email",
+          icon: Icons.email,
+          keyboardType: TextInputType.emailAddress,
+          fieldsLocked: fieldsLocked,
+        ),
+        _field(
+          controller: websiteController,
+          label: "Website (optional)",
+          icon: Icons.language,
+          keyboardType: TextInputType.url,
+          fieldsLocked: fieldsLocked,
+        ),
+        _field(
+          controller: addressController,
+          label: "Address",
+          icon: Icons.location_on,
+          maxLines: 2,
+          fieldsLocked: fieldsLocked,
+        ),
+        _field(
+          controller: districtController,
+          label: "District",
+          icon: Icons.map,
+          fieldsLocked: fieldsLocked,
+        ),
+        _field(
+          controller: pincodeController,
+          label: "Pincode",
+          icon: Icons.pin_drop,
+          keyboardType: TextInputType.number,
+          fieldsLocked: fieldsLocked,
+        ),
+        _field(
+          controller: industryTypeController,
+          label: "Industry Type",
+          icon: Icons.factory,
+          fieldsLocked: fieldsLocked,
+        ),
+        _field(
+          controller: productServiceController,
+          label: "Product & Service Description (optional)",
+          icon: Icons.inventory_2,
+          maxLines: 3,
+          fieldsLocked: fieldsLocked,
+        ),
       ],
     );
   }
 
   /// Non-Business / Student registration fields:
-  /// Name + Email + Phone + Address + Pincode + OTP
+  /// Name + Phone + Address + Email only.
   /// (Name and Phone are rendered by the shared section above this;
-  /// this widget adds Email, Address, and Pincode.)
+  /// this widget adds Address and Email.)
   Widget personalFields(bool fieldsLocked) {
     return Column(
       children: [
-        TextField(
+        _field(
           controller: emailController,
+          label: "Email",
+          icon: Icons.email,
           keyboardType: TextInputType.emailAddress,
-          enabled: !fieldsLocked,
-          decoration: InputDecoration(
-            labelText: "Email ID",
-            prefixIcon: const Icon(Icons.email),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(15),
-            ),
-          ),
+          fieldsLocked: fieldsLocked,
         ),
-
-        const SizedBox(height: 20),
-
-        TextField(
+        _field(
           controller: addressController,
+          label: "Address",
+          icon: Icons.location_on,
           maxLines: 3,
-          enabled: !fieldsLocked,
-          decoration: InputDecoration(
-            labelText: "Address",
-            prefixIcon: const Icon(Icons.location_on),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(15),
-            ),
-          ),
+          fieldsLocked: fieldsLocked,
         ),
-
-        const SizedBox(height: 20),
-
-        TextField(
-          controller: pincodeController,
-          keyboardType: TextInputType.number,
-          maxLength: 6,
-          enabled: !fieldsLocked,
-          decoration: InputDecoration(
-            labelText: "Pincode",
-            prefixIcon: const Icon(Icons.pin_drop),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(15),
-            ),
-          ),
-        ),
-
-        const SizedBox(height: 10),
       ],
     );
   }
@@ -470,39 +453,37 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 child: Column(
                   children: [
                     /// NAME — always visible
-                    TextField(
+                    _field(
                       controller: nameController,
-                      enabled: !fieldsLocked,
-                      decoration: InputDecoration(
-                        labelText: "Name",
-                        prefixIcon: const Icon(Icons.person),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(15),
+                      label: "Name",
+                      icon: Icons.person,
+                      fieldsLocked: fieldsLocked,
+                    ),
+
+                    /// PHONE NUMBER — already verified via OTP on the
+                    /// login screen, so it's shown locked here with a
+                    /// verified badge and is never editable.
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 20),
+                      child: TextField(
+                        controller: phoneController,
+                        keyboardType: TextInputType.phone,
+                        enabled: false,
+                        decoration: InputDecoration(
+                          labelText: "Phone Number",
+                          prefixIcon: const Icon(Icons.phone),
+                          suffixIcon: const Icon(
+                            Icons.check_circle,
+                            color: Colors.green,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(15),
+                          ),
+                          filled: true,
+                          fillColor: Colors.grey.shade100,
                         ),
                       ),
                     ),
-
-                    const SizedBox(height: 20),
-
-                    /// PHONE NUMBER — editable until verified
-                    TextField(
-                      controller: phoneController,
-                      keyboardType: TextInputType.phone,
-                      enabled: !otpSent && !phoneVerified,
-                      decoration: InputDecoration(
-                        labelText: "Phone Number",
-                        prefixIcon: const Icon(Icons.phone),
-                        suffixIcon: phoneVerified
-                            ? const Icon(Icons.check_circle,
-                                color: Colors.green)
-                            : null,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(15),
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 20),
 
                     /// Category-specific fields
                     if (isBusiness)
@@ -510,129 +491,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     else
                       personalFields(fieldsLocked),
 
-                    /// SEND OTP
-                    if (!otpSent && !phoneVerified)
-                      SizedBox(
-                        width: double.infinity,
-                        height: 55,
-                        child: ElevatedButton(
-                          onPressed: isSendingOtp ? null : sendOtp,
-                          style: ElevatedButton.styleFrom(
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(15),
-                            ),
-                          ),
-                          child: isSendingOtp
-                              ? const SizedBox(
-                                  height: 24,
-                                  width: 24,
-                                  child: CircularProgressIndicator(
-                                    color: Colors.white,
-                                    strokeWidth: 2.5,
-                                  ),
-                                )
-                              : const Text(
-                                  "SEND OTP",
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                        ),
-                      ),
-
-                    /// ENTER + VERIFY OTP
-                    if (otpSent && !phoneVerified) ...[
-                      TextField(
-                        controller: otpController,
-                        keyboardType: TextInputType.number,
-                        maxLength: 6,
-                        decoration: InputDecoration(
-                          labelText: "Enter OTP",
-                          prefixIcon: const Icon(Icons.lock_outline),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(15),
-                          ),
-                        ),
-                      ),
-
-                      const SizedBox(height: 10),
-
-                      SizedBox(
-                        width: double.infinity,
-                        height: 55,
-                        child: ElevatedButton(
-                          onPressed: isVerifying ? null : verifyOtp,
-                          style: ElevatedButton.styleFrom(
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(15),
-                            ),
-                          ),
-                          child: isVerifying
-                              ? const SizedBox(
-                                  height: 24,
-                                  width: 24,
-                                  child: CircularProgressIndicator(
-                                    color: Colors.white,
-                                    strokeWidth: 2.5,
-                                  ),
-                                )
-                              : const Text(
-                                  "VERIFY OTP",
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                        ),
-                      ),
-
-                      const SizedBox(height: 10),
-
-                      TextButton(
-                        onPressed: isSendingOtp
-                            ? null
-                            : () {
-                                setState(() {
-                                  otpSent = false;
-                                  otpController.clear();
-                                });
-                              },
-                        child: const Text("Change phone number / Resend"),
-                      ),
-                    ],
-
-                    /// VERIFIED CONFIRMATION
-                    if (phoneVerified) ...[
-                      const Row(
-                        children: [
-                          Icon(Icons.check_circle, color: Colors.green),
-                          SizedBox(width: 8),
-                          Text(
-                            "Phone number verified",
-                            style: TextStyle(
-                              color: Colors.green,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 20),
-                    ],
-
                     /// TERMS & CONDITIONS
                     termsAndConditionsRow(fieldsLocked),
 
-                    /// REGISTER — only enabled after phone verification
-                    /// and agreeing to the Terms & Conditions
+                    /// REGISTER — enabled once Terms & Conditions are
+                    /// accepted. Phone is already verified via the login
+                    /// OTP step, so no further verification is needed
+                    /// here.
                     SizedBox(
                       width: double.infinity,
                       height: 55,
                       child: ElevatedButton(
-                        onPressed:
-                            (isRegistering || !phoneVerified || !agreedToTerms)
-                                ? null
-                                : registerMember,
+                        onPressed: (isRegistering || !agreedToTerms)
+                            ? null
+                            : registerMember,
                         style: ElevatedButton.styleFrom(
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(15),

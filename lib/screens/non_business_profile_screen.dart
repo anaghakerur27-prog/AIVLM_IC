@@ -4,10 +4,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 /// Profile screen for Non-Business and Student members.
 ///
 /// Shows exactly what they filled in at registration — Name, Phone,
-/// Email, Address, Pincode — and lets them edit everything except the
-/// phone number (that's the Firestore doc id and tied to Firebase Auth,
-/// so it stays locked here, same pattern as the phone field on the
-/// registration screen once it's verified).
+/// Address, Email — and lets them edit everything except the phone
+/// number (that's the Firestore doc id and tied to Firebase Auth, so
+/// it stays locked here, same pattern as on the registration screen).
 class NonBusinessProfileScreen extends StatefulWidget {
   /// Cleaned 10-digit phone number — Firestore doc id.
   final String memberId;
@@ -41,7 +40,6 @@ class _NonBusinessProfileScreenState extends State<NonBusinessProfileScreen> {
   late TextEditingController _phoneCtrl;
   late TextEditingController _emailCtrl;
   late TextEditingController _addressCtrl;
-  late TextEditingController _pincodeCtrl;
 
   bool _isEditing = false;
   bool _isSaving = false;
@@ -61,7 +59,6 @@ class _NonBusinessProfileScreenState extends State<NonBusinessProfileScreen> {
     );
     _emailCtrl = TextEditingController(text: _field('email'));
     _addressCtrl = TextEditingController(text: _field('address'));
-    _pincodeCtrl = TextEditingController(text: _field('pincode'));
   }
 
   void _disposeControllers() {
@@ -69,7 +66,6 @@ class _NonBusinessProfileScreenState extends State<NonBusinessProfileScreen> {
     _phoneCtrl.dispose();
     _emailCtrl.dispose();
     _addressCtrl.dispose();
-    _pincodeCtrl.dispose();
   }
 
   @override
@@ -103,7 +99,6 @@ class _NonBusinessProfileScreenState extends State<NonBusinessProfileScreen> {
         'name': _nameCtrl.text.trim(),
         'email': _emailCtrl.text.trim(),
         'address': _addressCtrl.text.trim(),
-        'pincode': _pincodeCtrl.text.trim(),
       }, SetOptions(merge: true));
 
       if (!mounted) return;
@@ -177,9 +172,8 @@ class _NonBusinessProfileScreenState extends State<NonBusinessProfileScreen> {
         _sectionHeader('${widget.categoryLabel} Details'),
         _infoTile('Name', _nameCtrl.text),
         _infoTile('Phone Number', _phoneCtrl.text),
-        _infoTile('Email', _emailCtrl.text),
         _infoTile('Address', _addressCtrl.text),
-        _infoTile('Pincode', _pincodeCtrl.text),
+        _infoTile('Email', _emailCtrl.text),
         const SizedBox(height: 80),
       ],
     );
@@ -248,22 +242,16 @@ class _NonBusinessProfileScreenState extends State<NonBusinessProfileScreen> {
             enabled: false, // locked: tied to Firebase Auth + doc id
           ),
           _textField(
-            controller: _emailCtrl,
-            label: 'Email',
-            keyboardType: TextInputType.emailAddress,
-            validator: _emailValidator,
-          ),
-          _textField(
             controller: _addressCtrl,
             label: 'Address',
             maxLines: 3,
             validator: _requiredValidator,
           ),
           _textField(
-            controller: _pincodeCtrl,
-            label: 'Pincode',
-            keyboardType: TextInputType.number,
-            validator: _pincodeValidator,
+            controller: _emailCtrl,
+            label: 'Email',
+            keyboardType: TextInputType.emailAddress,
+            validator: _emailValidator,
           ),
         ],
       ),
@@ -310,16 +298,6 @@ class _NonBusinessProfileScreenState extends State<NonBusinessProfileScreen> {
     final emailRegex = RegExp(r'^[\w\.\-]+@[\w\-]+\.[a-zA-Z]{2,}$');
     if (!emailRegex.hasMatch(value.trim())) {
       return 'Enter a valid email address';
-    }
-    return null;
-  }
-
-  String? _pincodeValidator(String? value) {
-    if (value == null || value.trim().isEmpty) {
-      return 'This field is required';
-    }
-    if (!RegExp(r'^\d{4,10}$').hasMatch(value.trim())) {
-      return 'Enter a valid pincode';
     }
     return null;
   }
