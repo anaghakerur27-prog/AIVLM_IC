@@ -11,10 +11,13 @@ class AdminLoginPage extends StatefulWidget {
 }
 
 class _AdminLoginPageState extends State<AdminLoginPage> {
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
-
   final _formKey = GlobalKey<FormState>();
+
+  final TextEditingController _emailController =
+      TextEditingController();
+
+  final TextEditingController _passwordController =
+      TextEditingController();
 
   final AdminAuthService _authService = AdminAuthService();
 
@@ -37,7 +40,7 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
       _isLoading = true;
     });
 
-    final success = await _authService.loginAdmin(
+    final String? error = await _authService.loginAdmin(
       email: _emailController.text,
       password: _passwordController.text,
     );
@@ -48,7 +51,7 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
       _isLoading = false;
     });
 
-    if (success) {
+    if (error == null) {
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
@@ -57,10 +60,8 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
       );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Invalid admin credentials or admin access not authorized.',
-          ),
+        SnackBar(
+          content: Text(error),
         ),
       );
     }
@@ -79,7 +80,7 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
             child: Card(
               elevation: 6,
               child: Padding(
-                padding: const EdgeInsets.all(28),
+                padding: const EdgeInsets.all(30),
                 child: Form(
                   key: _formKey,
                   child: Column(
@@ -104,10 +105,11 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
                       const SizedBox(height: 8),
 
                       const Text(
-                        'Admin Panel',
+                        'ADMIN PANEL',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 18,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
 
@@ -122,7 +124,8 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
                           border: OutlineInputBorder(),
                         ),
                         validator: (value) {
-                          if (value == null || value.trim().isEmpty) {
+                          if (value == null ||
+                              value.trim().isEmpty) {
                             return 'Enter admin email';
                           }
 
@@ -151,7 +154,8 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
                             ),
                             onPressed: () {
                               setState(() {
-                                _obscurePassword = !_obscurePassword;
+                                _obscurePassword =
+                                    !_obscurePassword;
                               });
                             },
                           ),
@@ -168,14 +172,15 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
                       const SizedBox(height: 25),
 
                       SizedBox(
-                        height: 50,
+                        height: 52,
                         child: ElevatedButton(
                           onPressed: _isLoading ? null : _login,
                           child: _isLoading
                               ? const SizedBox(
                                   height: 24,
                                   width: 24,
-                                  child: CircularProgressIndicator(
+                                  child:
+                                      CircularProgressIndicator(
                                     strokeWidth: 2,
                                   ),
                                 )

@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 
-import 'screens/login_page.dart';
-
 import 'firebase_options.dart';
+import 'admin/admin_login_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -12,25 +11,24 @@ Future<void> main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  runApp(const MyApp());
+  runApp(const AdminApp());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class AdminApp extends StatelessWidget {
+  const AdminApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'AIVLM-I&C',
+      title: 'AIVLM-I&C Admin Panel',
       debugShowCheckedModeBanner: false,
 
       theme: ThemeData(
         primarySwatch: Colors.blue,
+        useMaterial3: true,
       ),
 
-      home: const LoginPage(),
-
-  
+      home: const AdminLoginPage(),
     );
   }
 }
