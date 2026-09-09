@@ -1,8 +1,10 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 
 import 'screens/login_page.dart';
-
 import 'firebase_options.dart';
 
 Future<void> main() async {
@@ -11,6 +13,21 @@ Future<void> main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  // Catch Flutter framework errors (widget build errors, layout errors,
+  // etc.) and report them to Crashlytics.
+  FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
+
+  // Catch errors that occur outside of the Flutter framework (e.g. in a
+  // platform channel callback or an isolate) and report them too.
+  PlatformDispatcher.instance.onError = (error, stack) {
+    FirebaseCrashlytics.instance.recordError(
+      error,
+      stack,
+      fatal: true,
+    );
+    return true;
+  };
 
   runApp(const MyApp());
 }
@@ -23,14 +40,8 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'AIVLM-I&C',
       debugShowCheckedModeBanner: false,
-
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-      ),
-
+      theme: ThemeData(primarySwatch: Colors.blue),
       home: const LoginPage(),
-
-  
     );
   }
 }
