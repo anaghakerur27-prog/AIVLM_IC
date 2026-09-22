@@ -360,8 +360,10 @@ class _DashboardPageState extends State<DashboardPage> {
     return MemberProfileRouter(memberId: widget.memberId);
   }
 
+  /// Settings now needs to know which member is signed in, so "Delete
+  /// Account" can remove the correct Firestore document.
   Widget settingsTab() {
-    return const SettingsScreen();
+    return SettingsScreen(memberId: widget.memberId);
   }
 
   List<Widget> get tabs => [

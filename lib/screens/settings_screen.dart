@@ -1,7 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({super.key});
+  /// The Firestore doc id (cleaned phone number) for the signed-in
+  /// member — needed so "Delete Account" knows which document to remove.
+  final String memberId;
+
+  const SettingsScreen({super.key, required this.memberId});
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -9,6 +15,7 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   bool notificationEnabled = true;
+  bool isDeletingAccount = false;
 
   Widget settingsTile({
     required IconData icon,
@@ -35,6 +42,91 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   void goTo(Widget page) {
     Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+  }
+
+  /// Permanently deletes the member's account: their Firestore document
+  /// and their Firebase Auth user. Both are removed — this cannot be
+  /// undone, unlike Logout which just ends the current session.
+  Future<void> _deleteAccount() async {
+    setState(() => isDeletingAccount = true);
+
+    try {
+      // 1. Delete the member's data from Firestore.
+      await FirebaseFirestore.instance
+          .collection('members')
+          .doc(widget.memberId)
+          .delete();
+
+      // 2. Delete the underlying Firebase Auth account itself, so the
+      // phone number is no longer tied to any credential.
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        await user.delete();
+      } else {
+        // No signed-in Auth user to delete (e.g. session already
+        // expired) — the Firestore document is gone either way, which
+        // is what matters for "account deleted".
+        await FirebaseAuth.instance.signOut();
+      }
+
+      if (!mounted) return;
+
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        '/',
+        (route) => false,
+      );
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+      setState(() => isDeletingAccount = false);
+
+      if (e.code == 'requires-recent-login') {
+        // Firebase requires a recent sign-in before allowing account
+        // deletion, for security. Since login here is OTP-based, the
+        // simplest recovery is asking the user to log out and log back
+        // in (which re-verifies via OTP) and then delete again.
+        showMessage(
+          'For security, please log out, log back in with OTP, then '
+          'try deleting your account again.',
+        );
+      } else {
+        showMessage('Failed to delete account: ${e.message}');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => isDeletingAccount = false);
+      showMessage('Failed to delete account: $e');
+    }
+  }
+
+  void _confirmDeleteAccount() {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text("Delete Account"),
+        content: const Text(
+          "This will permanently delete your account and all your data. "
+          "This action cannot be undone. Are you sure you want to "
+          "continue?",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+            },
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () {
+              Navigator.pop(context);
+              _deleteAccount();
+            },
+            child: const Text("Delete"),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -122,6 +214,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
               onTap: () {
                 goTo(const TermsConditionsScreen());
               },
+            ),
+
+            const SizedBox(height: 25),
+
+            const Text(
+              "Danger Zone",
+              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+            ),
+
+            const SizedBox(height: 15),
+
+            settingsTile(
+              icon: Icons.delete_forever,
+              title: "Delete Account",
+              iconColor: Colors.red,
+              trailing: isDeletingAccount
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.arrow_forward_ios, size: 18),
+              onTap: isDeletingAccount ? () {} : _confirmDeleteAccount,
             ),
 
             const SizedBox(height: 35),
