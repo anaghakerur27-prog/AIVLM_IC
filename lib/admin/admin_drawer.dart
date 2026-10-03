@@ -70,7 +70,7 @@ class AdminDrawer extends StatelessWidget {
                   SizedBox(height: 10),
 
                   Text(
-                    'AIVLM_I&C',
+                    '123',
                     style: TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.bold,

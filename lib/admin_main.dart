@@ -20,7 +20,7 @@ class AdminApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'AIVLM-I&C Admin Panel',
+      title: '123',
       debugShowCheckedModeBanner: false,
 
       theme: ThemeData(

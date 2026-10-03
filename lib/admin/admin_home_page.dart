@@ -192,7 +192,7 @@ class _AdminHomePageState extends State<AdminHomePage> {
                     SizedBox(height: 5),
 
                     Text(
-                      'AIVLM_I&C statistics and activity',
+                      '123 statistics and activity',
                     ),
                   ],
                 ),

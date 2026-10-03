@@ -420,7 +420,7 @@ class _LoginPageState extends State<LoginPage> {
                 // APP NAME
                 // ------------------------------------------------
                 const Text(
-                  "AIVLM-I&C",
+                  "123",
 
                   style: TextStyle(
                     fontSize: 30,
@@ -431,20 +431,6 @@ class _LoginPageState extends State<LoginPage> {
 
                 const SizedBox(height: 10),
 
-                const Text(
-                  "ALL INDIA VEERA SHAIVA\n"
-                  "LINGAYAT MAHASABHA\n"
-                  "INDUSTRY & COMMERCE",
-
-                  textAlign: TextAlign.center,
-
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-
-                const SizedBox(height: 40),
 
                 // ------------------------------------------------
                 // LOGIN / OTP CARD
@@ -714,7 +700,7 @@ class _LoginPageState extends State<LoginPage> {
                 const SizedBox(height: 30),
 
                 const Text(
-                  "Welcome to AIVLM-I&C Member Portal",
+                  "Welcome to 123 Member Portal",
 
                   textAlign: TextAlign.center,
 

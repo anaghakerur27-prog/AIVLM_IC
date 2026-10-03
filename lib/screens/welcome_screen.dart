@@ -122,7 +122,7 @@ class WelcomeScreen extends StatelessWidget {
 
                   /// APP NAME
                   const Text(
-                    "AIVLM-I&C",
+                    "123",
                     style: TextStyle(
                       fontSize: 32,
                       fontWeight: FontWeight.bold,
@@ -132,17 +132,6 @@ class WelcomeScreen extends StatelessWidget {
 
                   const SizedBox(height: 10),
 
-                  const Text(
-                    "ALL INDIA VEERA SHAIVA\nLINGAYAT MAHASABHA\nINDUSTRY & COMMERCE",
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.black87,
-                    ),
-                  ),
-
-                  const SizedBox(height: 20),
 
                   const Text(
                     "You're not registered yet.\nPlease select your category to continue",
@@ -192,7 +181,7 @@ class WelcomeScreen extends StatelessWidget {
                   const SizedBox(height: 40),
 
                   const Text(
-                    "Welcome to AIVLM-I&C Member Portal",
+                    "Welcome to 123 Member Portal",
                     textAlign: TextAlign.center,
                     style: TextStyle(color: Colors.grey, fontSize: 13),
                   ),

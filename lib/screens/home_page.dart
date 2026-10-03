@@ -384,7 +384,7 @@ class _DashboardPageState extends State<DashboardPage> {
     return Scaffold(
       backgroundColor: Colors.grey.shade100,
 
-      appBar: AppBar(title: const Text("AIVLM-I&C"), centerTitle: true),
+      appBar: AppBar(title: const Text("123"), centerTitle: true),
 
       body: tabs[selectedIndex],
 
