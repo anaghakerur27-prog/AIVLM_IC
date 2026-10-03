@@ -94,7 +94,7 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
                       const SizedBox(height: 20),
 
                       const Text(
-                        'AIVLM_I&C',
+                        '123',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 28,

@@ -127,7 +127,7 @@ class _AdminDashboardPageState
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          'AIVLM_I&C ADMIN',
+          '123',
           style: const TextStyle(
             fontWeight: FontWeight.bold,
           ),
