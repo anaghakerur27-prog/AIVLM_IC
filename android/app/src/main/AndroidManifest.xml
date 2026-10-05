@@ -5,7 +5,7 @@
         android:name="android.permission.POST_NOTIFICATIONS"/>
 
     <application
-        android:label="aivlm_ic"
+        android:label="123"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
 
