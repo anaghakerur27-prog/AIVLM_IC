@@ -1,13 +1,13 @@
 {
   "project_info": {
-    "project_number": "364502559229",
-    "project_id": "production-3ee69",
-    "storage_bucket": "production-3ee69.firebasestorage.app"
+    "project_number": "329690681345",
+    "project_id": "development-d0d1b",
+    "storage_bucket": "development-d0d1b.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:364502559229:android:79f34b8009538e20ae5194",
+        "mobilesdk_app_id": "1:329690681345:android:e2d1cd8b1d2068b7873000",
         "android_client_info": {
           "package_name": "com.aivlm.industrycommerce"
         }
@@ -15,7 +15,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyAvTgHRn5DLcz9F67hDYvk19-LTRrLjnXA"
+          "current_key": "AIzaSyCu2olvqQfSdB4_kswdtwCWrUJolrc8Mg8"
         }
       ],
       "services": {

@@ -1,5 +1,9 @@
 {
   "projects": {
-    "default": "aivlm-ic"
-  }
+    "default": "aivlm-ic",
+    "dev": "development-d0d1b",
+    "prod": "production-3ee69"
+  },
+  "targets": {},
+  "etags": {}
 }
