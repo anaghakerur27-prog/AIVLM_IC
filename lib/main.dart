@@ -20,13 +20,9 @@ Future<void> main() async {
         : dev.DefaultFirebaseOptions.currentPlatform,
   );
 
-  // Catch Flutter framework errors (widget build errors, layout errors,
-  // etc.) and report them to Crashlytics.
   FlutterError.onError =
       FirebaseCrashlytics.instance.recordFlutterFatalError;
 
-  // Catch errors that occur outside of the Flutter framework
-  // (e.g. in a platform channel callback or an isolate).
   PlatformDispatcher.instance.onError = (error, stack) {
     FirebaseCrashlytics.instance.recordError(
       error,
@@ -38,7 +34,6 @@ Future<void> main() async {
 
   runApp(const MyApp());
 }
-
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 

@@ -62,10 +62,7 @@ productFlavors {
     // ===========================
     signingConfigs {
         create("release") {
-            storeFile = File(
-                project.projectDir,
-                keystoreProperties["storeFile"] as String
-            )
+            storeFile = File(keystoreProperties["storeFile"] as String)
 
             storePassword =
                 keystoreProperties["storePassword"] as String
