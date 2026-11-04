@@ -6,6 +6,8 @@
 
 class ApprovedMemberIds {
   static const Set<String> ids = {
+    '12118811',
+    '121181',
     '21602',
     '66020',
     '28368',

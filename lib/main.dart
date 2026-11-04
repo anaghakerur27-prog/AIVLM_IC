@@ -1,3 +1,4 @@
+
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -14,12 +15,24 @@ const String environment =
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Firebase.initializeApp(
-    options: environment == 'prod'
-        ? prod.DefaultFirebaseOptions.currentPlatform
-        : dev.DefaultFirebaseOptions.currentPlatform,
-  );
+  // Initialize Firebase only once.
+  if (Firebase.apps.isEmpty) {
+    await Firebase.initializeApp(
+      options: environment == 'prod'
+          ? prod.DefaultFirebaseOptions.currentPlatform
+          : dev.DefaultFirebaseOptions.currentPlatform,
+    );
+  }
+  final app = Firebase.app();
 
+debugPrint('========== FIREBASE DEBUG ==========');
+debugPrint('Environment: $environment');
+debugPrint('Project ID: ${app.options.projectId}');
+debugPrint('Sender ID: ${app.options.messagingSenderId}');
+debugPrint('App ID: ${app.options.appId}');
+debugPrint('====================================');
+
+  // Configure Crashlytics.
   FlutterError.onError =
       FirebaseCrashlytics.instance.recordFlutterFatalError;
 
@@ -34,6 +47,7 @@ Future<void> main() async {
 
   runApp(const MyApp());
 }
+
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
