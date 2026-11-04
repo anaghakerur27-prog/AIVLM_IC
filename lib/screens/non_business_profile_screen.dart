@@ -1,23 +1,12 @@
-import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
 
 /// Profile screen for Non-Business and Student members.
-///
-/// Shows exactly what they filled in at registration — Name, Phone,
-/// Address, Email — and lets them edit everything except the phone
-/// number (that's the Firestore doc id and tied to Firebase Auth, so
-/// it stays locked here, same pattern as on the registration screen).
+/// Phone is read-only because it identifies the member document and login.
 class NonBusinessProfileScreen extends StatefulWidget {
-  /// Cleaned 10-digit phone number — Firestore doc id.
   final String memberId;
-
-  /// The member doc's data, as already fetched by MemberProfileRouter.
   final Map<String, dynamic> initialData;
-
-  /// "Non-Business" or "Student" — used in the app bar title / headers.
   final String categoryLabel;
-
-  /// Called after a successful save, so the router can refresh its data.
   final VoidCallback? onSaved;
 
   const NonBusinessProfileScreen({
@@ -35,62 +24,65 @@ class NonBusinessProfileScreen extends StatefulWidget {
 
 class _NonBusinessProfileScreenState extends State<NonBusinessProfileScreen> {
   final _formKey = GlobalKey<FormState>();
-
-  late TextEditingController _nameCtrl;
-  late TextEditingController _phoneCtrl;
-  late TextEditingController _emailCtrl;
-  late TextEditingController _addressCtrl;
-
+  late final TextEditingController _nameCtrl;
+  late final TextEditingController _phoneCtrl;
+  late final TextEditingController _emailCtrl;
+  late final TextEditingController _addressCtrl;
   bool _isEditing = false;
   bool _isSaving = false;
+
+  String _value(String key) {
+    final value = widget.initialData[key];
+    return value == null ? '' : value.toString();
+  }
 
   @override
   void initState() {
     super.initState();
-    _initControllers();
+    _nameCtrl = TextEditingController();
+    _phoneCtrl = TextEditingController();
+    _emailCtrl = TextEditingController();
+    _addressCtrl = TextEditingController();
+    _loadData();
   }
 
-  String _field(String key) => (widget.initialData[key] as String?) ?? '';
-
-  void _initControllers() {
-    _nameCtrl = TextEditingController(text: _field('name'));
-    _phoneCtrl = TextEditingController(
-      text: _field('phone').isNotEmpty ? _field('phone') : widget.memberId,
-    );
-    _emailCtrl = TextEditingController(text: _field('email'));
-    _addressCtrl = TextEditingController(text: _field('address'));
+  void _loadData() {
+    _nameCtrl.text = _value('name');
+    final phone = _value('phone');
+    _phoneCtrl.text = phone.isNotEmpty ? phone : widget.memberId;
+    _emailCtrl.text = _value('email');
+    _addressCtrl.text = _value('address');
   }
 
-  void _disposeControllers() {
-    _nameCtrl.dispose();
-    _phoneCtrl.dispose();
-    _emailCtrl.dispose();
-    _addressCtrl.dispose();
+  @override
+  void didUpdateWidget(covariant NonBusinessProfileScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.memberId != widget.memberId ||
+        oldWidget.initialData != widget.initialData) {
+      _loadData();
+      _isEditing = false;
+    }
   }
 
   @override
   void dispose() {
-    _disposeControllers();
+    _nameCtrl.dispose();
+    _phoneCtrl.dispose();
+    _emailCtrl.dispose();
+    _addressCtrl.dispose();
     super.dispose();
-  }
-
-  void _enterEditMode() {
-    setState(() => _isEditing = true);
   }
 
   void _cancelEdit() {
     setState(() {
+      _loadData();
       _isEditing = false;
-      _disposeControllers();
-      _initControllers();
     });
   }
 
   Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) return;
-
+    if (_isSaving || !(_formKey.currentState?.validate() ?? false)) return;
     setState(() => _isSaving = true);
-
     try {
       await FirebaseFirestore.instance
           .collection('members')
@@ -99,26 +91,22 @@ class _NonBusinessProfileScreenState extends State<NonBusinessProfileScreen> {
         'name': _nameCtrl.text.trim(),
         'email': _emailCtrl.text.trim(),
         'address': _addressCtrl.text.trim(),
+        'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
       if (!mounted) return;
-
-      setState(() {
-        _isEditing = false;
-        _isSaving = false;
-      });
-
+      setState(() => _isEditing = false);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Profile updated successfully')),
       );
-
       widget.onSaved?.call();
     } catch (e) {
       if (!mounted) return;
-      setState(() => _isSaving = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to save changes: $e')),
       );
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
     }
   }
 
@@ -132,7 +120,7 @@ class _NonBusinessProfileScreenState extends State<NonBusinessProfileScreen> {
             IconButton(
               icon: const Icon(Icons.edit),
               tooltip: 'Edit Profile',
-              onPressed: _enterEditMode,
+              onPressed: () => setState(() => _isEditing = true),
             )
           else
             IconButton(
@@ -142,7 +130,7 @@ class _NonBusinessProfileScreenState extends State<NonBusinessProfileScreen> {
             ),
         ],
       ),
-      body: _isEditing ? _buildEditForm() : _buildViewMode(),
+      body: _isEditing ? _editForm() : _viewProfile(),
       floatingActionButton: _isEditing
           ? FloatingActionButton.extended(
               onPressed: _isSaving ? null : _save,
@@ -162,143 +150,112 @@ class _NonBusinessProfileScreenState extends State<NonBusinessProfileScreen> {
     );
   }
 
-  // ---------------------------------------------------------------------
-  // VIEW MODE
-  // ---------------------------------------------------------------------
-  Widget _buildViewMode() {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        _sectionHeader('${widget.categoryLabel} Details'),
-        _infoTile('Name', _nameCtrl.text),
-        _infoTile('Phone Number', _phoneCtrl.text),
-        _infoTile('Address', _addressCtrl.text),
-        _infoTile('Email', _emailCtrl.text),
-        const SizedBox(height: 80),
-      ],
-    );
-  }
+  Widget _viewProfile() => ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          _header('${widget.categoryLabel} Details'),
+          _info('Name', _nameCtrl.text),
+          _info('Phone Number', _phoneCtrl.text),
+          _info('Address', _addressCtrl.text),
+          _info('Email', _emailCtrl.text),
+          const SizedBox(height: 80),
+        ],
+      );
 
-  Widget _sectionHeader(String title) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8, top: 4),
-      child: Text(
-        title,
-        style: const TextStyle(
-          fontSize: 16,
-          fontWeight: FontWeight.bold,
-          color: Colors.black87,
+  Widget _header(String title) => Padding(
+        padding: const EdgeInsets.only(bottom: 8, top: 4),
+        child: Text(
+          title,
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: Colors.black87,
+          ),
         ),
-      ),
-    );
-  }
+      );
 
-  Widget _infoTile(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 140,
-            child: Text(
-              label,
-              style: const TextStyle(
-                fontWeight: FontWeight.w600,
-                color: Colors.black54,
-              ),
+  Widget _info(String label, String value) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 140,
+              child: Text(label,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black54,
+                  )),
             ),
-          ),
-          Expanded(
-            child: Text(
-              value.isEmpty ? '-' : value,
-              style: const TextStyle(color: Colors.black87),
+            Expanded(child: Text(value.isEmpty ? '-' : value)),
+          ],
+        ),
+      );
+
+  Widget _editForm() => Form(
+        key: _formKey,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+          children: [
+            _header('${widget.categoryLabel} Details'),
+            _field(_nameCtrl, 'Name', validator: _required),
+            _field(
+              _phoneCtrl,
+              'Phone Number',
+              keyboardType: TextInputType.phone,
+              enabled: false,
             ),
-          ),
-        ],
-      ),
-    );
-  }
+            _field(
+              _addressCtrl,
+              'Address',
+              maxLines: 3,
+              validator: _required,
+            ),
+            _field(
+              _emailCtrl,
+              'Email',
+              keyboardType: TextInputType.emailAddress,
+              validator: _email,
+            ),
+          ],
+        ),
+      );
 
-  // ---------------------------------------------------------------------
-  // EDIT MODE
-  // ---------------------------------------------------------------------
-  Widget _buildEditForm() {
-    return Form(
-      key: _formKey,
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-        children: [
-          _sectionHeader('${widget.categoryLabel} Details'),
-          _textField(
-            controller: _nameCtrl,
-            label: 'Name',
-            validator: _requiredValidator,
-          ),
-          _textField(
-            controller: _phoneCtrl,
-            label: 'Phone Number',
-            keyboardType: TextInputType.phone,
-            enabled: false, // locked: tied to Firebase Auth + doc id
-          ),
-          _textField(
-            controller: _addressCtrl,
-            label: 'Address',
-            maxLines: 3,
-            validator: _requiredValidator,
-          ),
-          _textField(
-            controller: _emailCtrl,
-            label: 'Email',
-            keyboardType: TextInputType.emailAddress,
-            validator: _emailValidator,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _textField({
-    required TextEditingController controller,
-    required String label,
+  Widget _field(
+    TextEditingController controller,
+    String label, {
     String? Function(String?)? validator,
     TextInputType keyboardType = TextInputType.text,
     int maxLines = 1,
     bool enabled = true,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: TextFormField(
-        controller: controller,
-        enabled: enabled && !_isSaving,
-        maxLines: maxLines,
-        keyboardType: keyboardType,
-        validator: validator,
-        decoration: InputDecoration(
-          labelText: label,
-          border: const OutlineInputBorder(),
-          filled: !enabled,
-          fillColor: enabled ? null : Colors.grey.shade100,
+  }) =>
+      Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: TextFormField(
+          controller: controller,
+          enabled: enabled && !_isSaving,
+          keyboardType: keyboardType,
+          maxLines: maxLines,
+          validator: validator,
+          decoration: InputDecoration(
+            labelText: label,
+            border: const OutlineInputBorder(),
+            filled: !enabled,
+            fillColor: enabled ? null : Colors.grey.shade100,
+          ),
         ),
-      ),
-    );
-  }
+      );
 
-  String? _requiredValidator(String? value) {
+  String? _required(String? value) =>
+      value == null || value.trim().isEmpty ? 'This field is required' : null;
+
+  String? _email(String? value) {
     if (value == null || value.trim().isEmpty) {
       return 'This field is required';
     }
-    return null;
-  }
-
-  String? _emailValidator(String? value) {
-    if (value == null || value.trim().isEmpty) {
-      return 'This field is required';
-    }
-    final emailRegex = RegExp(r'^[\w\.\-]+@[\w\-]+\.[a-zA-Z]{2,}$');
-    if (!emailRegex.hasMatch(value.trim())) {
-      return 'Enter a valid email address';
-    }
-    return null;
+    return RegExp(r'^[\w.\-]+@[\w\-]+\.[a-zA-Z]{2,}$')
+            .hasMatch(value.trim())
+        ? null
+        : 'Enter a valid email address';
   }
 }

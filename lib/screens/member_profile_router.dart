@@ -1,26 +1,16 @@
-import 'package:flutter/material.dart';
+import 'dart:io';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/material.dart';
 
-// Adjust this import to match the actual filename in your project —
-// it's the file that defines `ProfileScreen` and `MemberProfile`
-// (the business profile screen you already have).
 import 'profile_screen.dart';
-
 import 'non_business_profile_screen.dart';
 
-/// Drop this into the Profile tab of home_page.dart instead of a
-/// hardcoded ProfileScreen(). It looks up the member's userType in
-/// Firestore and renders the right profile screen for them:
-///
-///   business               -> ProfileScreen (existing, full business form)
-///   non_business / student -> NonBusinessProfileScreen (simple form)
-///
-/// Usage (inside DashboardPage / home_page.dart):
-///   MemberProfileRouter(memberId: widget.memberId)
+/// Routes a member to the profile UI for their Firestore userType.
+/// memberId is the Firestore document ID (cleaned phone number), not
+/// necessarily the human-readable membership number.
 class MemberProfileRouter extends StatefulWidget {
-  /// The Firestore doc id used everywhere else in the app — the cleaned
-  /// 10-digit phone number (see LoginPage.getCleanPhoneNumber and
-  /// RegisterScreen's `.doc(phone)` calls).
   final String memberId;
 
   const MemberProfileRouter({super.key, required this.memberId});
@@ -38,17 +28,27 @@ class _MemberProfileRouterState extends State<MemberProfileRouter> {
     _memberFuture = _fetchMember();
   }
 
-  Future<DocumentSnapshot<Map<String, dynamic>>> _fetchMember() {
-    return FirebaseFirestore.instance
-        .collection('members')
-        .doc(widget.memberId)
-        .get();
+  @override
+  void didUpdateWidget(covariant MemberProfileRouter oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.memberId != widget.memberId) {
+      _memberFuture = _fetchMember();
+    }
   }
 
+  Future<DocumentSnapshot<Map<String, dynamic>>> _fetchMember() =>
+      FirebaseFirestore.instance
+          .collection('members')
+          .doc(widget.memberId)
+          .get();
+
   void _reload() {
-    setState(() {
-      _memberFuture = _fetchMember();
-    });
+    if (mounted) setState(() => _memberFuture = _fetchMember());
+  }
+
+  String _string(Map<String, dynamic> data, String key) {
+    final value = data[key];
+    return value == null ? '' : value.toString().trim();
   }
 
   @override
@@ -61,7 +61,6 @@ class _MemberProfileRouterState extends State<MemberProfileRouter> {
             body: Center(child: CircularProgressIndicator()),
           );
         }
-
         if (snapshot.hasError) {
           return Scaffold(
             appBar: AppBar(title: const Text('Profile')),
@@ -75,73 +74,65 @@ class _MemberProfileRouterState extends State<MemberProfileRouter> {
         }
 
         final doc = snapshot.data;
-
         if (doc == null || !doc.exists) {
           return Scaffold(
             appBar: AppBar(title: const Text('Profile')),
             body: Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text('No profile found for this member.'),
-                    const SizedBox(height: 12),
-                    ElevatedButton(
-                      onPressed: _reload,
-                      child: const Text('Retry'),
-                    ),
-                  ],
-                ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('No profile found for this member.'),
+                  const SizedBox(height: 12),
+                  ElevatedButton(
+                    onPressed: _reload,
+                    child: const Text('Retry'),
+                  ),
+                ],
               ),
             ),
           );
         }
 
         final data = doc.data() ?? <String, dynamic>{};
-        final userType = (data['userType'] as String?) ?? 'non_business';
+        final type = _string(data, 'userType').toLowerCase();
 
-        if (userType == 'business') {
+        if (type == 'business') {
           return ProfileScreen(
-            profile: _mapToBusinessProfile(widget.memberId, data),
+            key: ValueKey('business-${widget.memberId}'),
+            profile: _businessProfile(widget.memberId, data),
             onSave: _saveBusinessProfile,
           );
         }
 
         return NonBusinessProfileScreen(
+          key: ValueKey('$type-${widget.memberId}'),
           memberId: widget.memberId,
           initialData: data,
-          categoryLabel: userType == 'student' ? 'Student' : 'Non-Business',
+          categoryLabel: type == 'student' ? 'Student' : 'Non-Business',
           onSaved: _reload,
         );
       },
     );
   }
 
-  /// Maps whatever is stored in Firestore for a business member onto the
-  /// existing MemberProfile model used by ProfileScreen.
-  ///
-  /// Your current RegisterScreen only ever saves name / phone / memberId /
-  /// userType for business members — fields like businessName, ownerName,
-  /// website, district, industryType, and productServiceDescription aren't
-  /// collected anywhere yet. They come through as empty strings below so
-  /// the form still renders correctly; wire up a "Business Details" step
-  /// (at registration or later) to actually populate them, and this
-  /// mapping will pick them up automatically since it reads by key.
-  MemberProfile _mapToBusinessProfile(
-    String memberId,
+  MemberProfile _businessProfile(
+    String documentId,
     Map<String, dynamic> data,
   ) {
-    String s(String key) => (data[key] as String?)?.trim() ?? '';
-    final phone = s('phone').isNotEmpty ? s('phone') : memberId;
+    String s(String key) => _string(data, key);
+    final phone = s('phone').isNotEmpty ? s('phone') : documentId;
+    final membership = s('membershipNumber').isNotEmpty
+        ? s('membershipNumber')
+        : s('memberId');
 
     return MemberProfile(
       memberName: s('name'),
-      membershipNumber: s('memberId'),
+      membershipNumber: membership,
       phoneNumber: phone,
       businessName: s('businessName'),
       ownerName: s('ownerName').isNotEmpty ? s('ownerName') : s('name'),
-      contactNumber: s('contactNumber').isNotEmpty ? s('contactNumber') : phone,
+      contactNumber:
+          s('contactNumber').isNotEmpty ? s('contactNumber') : phone,
       email: s('email'),
       website: s('website'),
       address: s('address'),
@@ -149,19 +140,60 @@ class _MemberProfileRouterState extends State<MemberProfileRouter> {
       pincode: s('pincode'),
       industryType: s('industryType'),
       productServiceDescription: s('productServiceDescription'),
-      companyProfilePdfPath: data['companyProfilePdfPath'] as String?,
-      visitingCardImagePath: data['visitingCardImagePath'] as String?,
+      companyProfilePdfPath: s('companyProfilePdfPath').isNotEmpty
+          ? s('companyProfilePdfPath')
+          : null,
+      visitingCardImagePath: s('visitingCardImagePath').isNotEmpty
+          ? s('visitingCardImagePath')
+          : null,
     );
   }
 
+  Future<String?> _uploadLocalFile({
+    required String? path,
+    required String storagePath,
+    required String contentType,
+  }) async {
+    if (path == null || path.trim().isEmpty) return path;
+    final value = path.trim();
+
+    // Existing Storage download URL: don't upload it again.
+    if (value.startsWith('https://') || value.startsWith('http://')) {
+      return value;
+    }
+
+    final file = File(value);
+    if (!await file.exists()) {
+      throw Exception(
+        'Selected file is no longer available. Please select it again.',
+      );
+    }
+
+    final ref = FirebaseStorage.instance.ref().child(storagePath);
+    await ref.putFile(file, SettableMetadata(contentType: contentType));
+    return ref.getDownloadURL();
+  }
+
   Future<void> _saveBusinessProfile(MemberProfile updated) async {
+    final pdfUrl = await _uploadLocalFile(
+      path: updated.companyProfilePdfPath,
+      storagePath: 'members/${widget.memberId}/profile/company_profile.pdf',
+      contentType: 'application/pdf',
+    );
+
+    final cardUrl = await _uploadLocalFile(
+      path: updated.visitingCardImagePath,
+      storagePath: 'members/${widget.memberId}/profile/visiting_card',
+      contentType: 'image/jpeg',
+    );
+
+    // Do not change document ID, registered phone, or membership number.
+    // merge:true preserves all other fields already stored on this member.
     await FirebaseFirestore.instance
         .collection('members')
         .doc(widget.memberId)
         .set({
       'name': updated.memberName,
-      'memberId': updated.membershipNumber,
-      'phone': updated.phoneNumber,
       'businessName': updated.businessName,
       'ownerName': updated.ownerName,
       'contactNumber': updated.contactNumber,
@@ -172,10 +204,15 @@ class _MemberProfileRouterState extends State<MemberProfileRouter> {
       'pincode': updated.pincode,
       'industryType': updated.industryType,
       'productServiceDescription': updated.productServiceDescription,
-      if (updated.companyProfilePdfPath != null)
-        'companyProfilePdfPath': updated.companyProfilePdfPath,
-      if (updated.visitingCardImagePath != null)
-        'visitingCardImagePath': updated.visitingCardImagePath,
+      if (pdfUrl != null && pdfUrl.isNotEmpty)
+        'companyProfilePdfPath': pdfUrl,
+      if (cardUrl != null && cardUrl.isNotEmpty)
+        'visitingCardImagePath': cardUrl,
+      'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
+
+    // The screen now holds permanent URLs instead of temporary device paths.
+    updated.companyProfilePdfPath = pdfUrl;
+    updated.visitingCardImagePath = cardUrl;
   }
 }

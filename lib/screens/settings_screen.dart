@@ -3,11 +3,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class SettingsScreen extends StatefulWidget {
-  /// The Firestore doc id (cleaned phone number) for the signed-in
-  /// member — needed so "Delete Account" knows which document to remove.
+  /// Firestore document ID of the signed-in member.
   final String memberId;
 
-  const SettingsScreen({super.key, required this.memberId});
+  const SettingsScreen({
+    super.key,
+    required this.memberId,
+  });
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -16,6 +18,7 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   bool notificationEnabled = true;
   bool isDeletingAccount = false;
+  bool isLoggingOut = false;
 
   Widget settingsTile({
     required IconData icon,
@@ -29,45 +32,69 @@ class _SettingsScreenState extends State<SettingsScreen> {
       elevation: 3,
       child: ListTile(
         leading: Icon(icon, color: iconColor),
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
-        trailing: trailing ?? const Icon(Icons.arrow_forward_ios, size: 18),
+        title: Text(
+          title,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+        trailing: trailing ??
+            const Icon(
+              Icons.arrow_forward_ios,
+              size: 18,
+            ),
         onTap: onTap,
       ),
     );
   }
 
-  void showMessage(String text) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+  void showMessage(String message) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
   }
 
   void goTo(Widget page) {
-    Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => page),
+    );
   }
 
-  /// Permanently deletes the member's account: their Firestore document
-  /// and their Firebase Auth user. Both are removed — this cannot be
-  /// undone, unlike Logout which just ends the current session.
+  /// Permanently deletes the Firebase Authentication account
+  /// and the member document from Firestore.
+  ///
+  /// Note: This does not automatically delete related business records,
+  /// enquiries, notifications, or Firebase Storage files.
+  ///
+  /// For complete deletion across multiple collections and Storage,
+  /// use a secure Firebase Cloud Function.
   Future<void> _deleteAccount() async {
-    setState(() => isDeletingAccount = true);
+    if (isDeletingAccount) return;
+
+    setState(() {
+      isDeletingAccount = true;
+    });
 
     try {
-      // 1. Delete the member's data from Firestore.
+      final user = FirebaseAuth.instance.currentUser;
+
+      if (user == null) {
+        throw FirebaseAuthException(
+          code: 'no-current-user',
+          message: 'No signed-in account was found. Please log in again.',
+        );
+      }
+
+      // Step 1: Delete Firebase Authentication account.
+      // Firebase may require the user to sign in again using OTP.
+      await user.delete();
+
+      // Step 2: Delete the corresponding member document.
       await FirebaseFirestore.instance
           .collection('members')
           .doc(widget.memberId)
           .delete();
-
-      // 2. Delete the underlying Firebase Auth account itself, so the
-      // phone number is no longer tied to any credential.
-      final user = FirebaseAuth.instance.currentUser;
-      if (user != null) {
-        await user.delete();
-      } else {
-        // No signed-in Auth user to delete (e.g. session already
-        // expired) — the Firestore document is gone either way, which
-        // is what matters for "account deleted".
-        await FirebaseAuth.instance.signOut();
-      }
 
       if (!mounted) return;
 
@@ -78,51 +105,151 @@ class _SettingsScreenState extends State<SettingsScreen> {
       );
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
-      setState(() => isDeletingAccount = false);
+
+      setState(() {
+        isDeletingAccount = false;
+      });
 
       if (e.code == 'requires-recent-login') {
-        // Firebase requires a recent sign-in before allowing account
-        // deletion, for security. Since login here is OTP-based, the
-        // simplest recovery is asking the user to log out and log back
-        // in (which re-verifies via OTP) and then delete again.
         showMessage(
-          'For security, please log out, log back in with OTP, then '
-          'try deleting your account again.',
+          'For security, please log out and log back in using OTP. '
+          'Then try deleting your account again.',
+        );
+      } else if (e.code == 'no-current-user') {
+        showMessage(
+          'Your login session has expired. Please log in again.',
         );
       } else {
-        showMessage('Failed to delete account: ${e.message}');
+        showMessage(
+          'Failed to delete account: ${e.message ?? e.code}',
+        );
       }
     } catch (e) {
       if (!mounted) return;
-      setState(() => isDeletingAccount = false);
+
+      setState(() {
+        isDeletingAccount = false;
+      });
+
       showMessage('Failed to delete account: $e');
     }
   }
 
   void _confirmDeleteAccount() {
-    showDialog(
+    if (isDeletingAccount) return;
+
+    showDialog<void>(
       context: context,
-      builder: (_) => AlertDialog(
-        title: const Text("Delete Account"),
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete Account'),
         content: const Text(
-          "This will permanently delete your account and all your data. "
-          "This action cannot be undone. Are you sure you want to "
-          "continue?",
+          'This will permanently delete your Firebase login account '
+          'and your member profile document.\n\n'
+          'Related business records, enquiries, notifications, and '
+          'uploaded files may not be deleted automatically.\n\n'
+          'This action cannot be undone. Are you sure you want to continue?',
         ),
         actions: [
           TextButton(
             onPressed: () {
-              Navigator.pop(context);
+              Navigator.pop(dialogContext);
             },
-            child: const Text("Cancel"),
+            child: const Text('Cancel'),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
             onPressed: () {
-              Navigator.pop(context);
+              Navigator.pop(dialogContext);
               _deleteAccount();
             },
-            child: const Text("Delete"),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Signs out the Firebase Authentication user and returns to welcome.
+  Future<void> _logout() async {
+    if (isLoggingOut || isDeletingAccount) return;
+
+    setState(() {
+      isLoggingOut = true;
+    });
+
+    try {
+      await FirebaseAuth.instance.signOut();
+
+      if (!mounted) return;
+
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        '/',
+        (route) => false,
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        isLoggingOut = false;
+      });
+
+      showMessage('Unable to logout: $e');
+    }
+  }
+
+  void _confirmLogout() {
+    if (isLoggingOut || isDeletingAccount) return;
+
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Logout'),
+        content: const Text(
+          'Are you sure you want to logout?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(dialogContext);
+            },
+            child: const Text('No'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              _logout();
+            },
+            child: const Text('Yes'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAboutDialog() {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('About 123 App'),
+        content: const Text(
+          '123 App\n\n'
+          'Industry & Commerce\n\n'
+          'Version 1.0.0',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(dialogContext);
+            },
+            child: const Text('OK'),
           ),
         ],
       ),
@@ -132,22 +259,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Settings"), centerTitle: true),
+      appBar: AppBar(
+        title: const Text('Settings'),
+        centerTitle: true,
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              "General",
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+              'General',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+              ),
             ),
 
             const SizedBox(height: 15),
 
             settingsTile(
               icon: Icons.notifications,
-              title: "Notification Preferences",
+              title: 'Notification Preferences',
               trailing: Switch(
                 value: notificationEnabled,
                 onChanged: (value) {
@@ -156,45 +289,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   });
                 },
               ),
-              onTap: () {},
+              onTap: () {
+                setState(() {
+                  notificationEnabled = !notificationEnabled;
+                });
+              },
             ),
 
             const SizedBox(height: 25),
 
             const Text(
-              "Information",
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+              'Information',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+              ),
             ),
 
             const SizedBox(height: 15),
 
             settingsTile(
               icon: Icons.info,
-              title: "About 123 App",
-              onTap: () {
-                showDialog(
-                  context: context,
-                  builder: (_) => AlertDialog(
-                    title: const Text("About"),
-                    content: const Text(
-                      "123 App\n\nIndustry & Commerce\n\nVersion 1.0.0",
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () {
-                          Navigator.pop(context);
-                        },
-                        child: const Text("OK"),
-                      ),
-                    ],
-                  ),
-                );
-              },
+              title: 'About 123 App',
+              onTap: _showAboutDialog,
             ),
 
             settingsTile(
               icon: Icons.support_agent,
-              title: "Contact Support",
+              title: 'Contact Support',
               onTap: () {
                 goTo(const ContactSupportScreen());
               },
@@ -202,7 +324,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
             settingsTile(
               icon: Icons.privacy_tip,
-              title: "Privacy Policy",
+              title: 'Privacy Policy',
               onTap: () {
                 goTo(const PrivacyPolicyScreen());
               },
@@ -210,7 +332,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
             settingsTile(
               icon: Icons.description,
-              title: "Terms & Conditions",
+              title: 'Terms & Conditions',
               onTap: () {
                 goTo(const TermsConditionsScreen());
               },
@@ -219,24 +341,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: 25),
 
             const Text(
-              "Danger Zone",
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+              'Danger Zone',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+              ),
             ),
 
             const SizedBox(height: 15),
 
             settingsTile(
               icon: Icons.delete_forever,
-              title: "Delete Account",
+              title: 'Delete Account',
               iconColor: Colors.red,
               trailing: isDeletingAccount
                   ? const SizedBox(
                       width: 18,
                       height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                      ),
                     )
-                  : const Icon(Icons.arrow_forward_ios, size: 18),
-              onTap: isDeletingAccount ? () {} : _confirmDeleteAccount,
+                  : const Icon(
+                      Icons.arrow_forward_ios,
+                      size: 18,
+                    ),
+              onTap: isDeletingAccount
+                  ? () {}
+                  : _confirmDeleteAccount,
             ),
 
             const SizedBox(height: 35),
@@ -245,40 +377,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
               width: double.infinity,
               height: 55,
               child: ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                onPressed: () {
-                  showDialog(
-                    context: context,
-                    builder: (_) => AlertDialog(
-                      title: const Text("Logout"),
-                      content: const Text("Are you sure you want to logout?"),
-                      actions: [
-                        TextButton(
-                          onPressed: () {
-                            Navigator.pop(context);
-                          },
-                          child: const Text("No"),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: (isLoggingOut || isDeletingAccount)
+                    ? null
+                    : _confirmLogout,
+                icon: isLoggingOut
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
                         ),
-                        ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.red,
-                          ),
-                          onPressed: () {
-                            Navigator.pop(context);
-                            Navigator.pushNamedAndRemoveUntil(
-                              context,
-                              '/',
-                              (route) => false,
-                            );
-                          },
-                          child: const Text("Yes"),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-                icon: const Icon(Icons.logout),
-                label: const Text("LOGOUT", style: TextStyle(fontSize: 18)),
+                      )
+                    : const Icon(Icons.logout),
+                label: Text(
+                  isLoggingOut ? 'LOGGING OUT...' : 'LOGOUT',
+                  style: const TextStyle(fontSize: 18),
+                ),
               ),
             ),
 
@@ -290,17 +409,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 }
 
-/// Shared scaffold wrapper so every info/content page looks consistent.
+/// Shared scaffold wrapper for information pages.
 class _InfoPageScaffold extends StatelessWidget {
   final String title;
   final Widget child;
 
-  const _InfoPageScaffold({required this.title, required this.child});
+  const _InfoPageScaffold({
+    required this.title,
+    required this.child,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(title), centerTitle: true),
+      appBar: AppBar(
+        title: Text(title),
+        centerTitle: true,
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: child,
@@ -309,63 +434,85 @@ class _InfoPageScaffold extends StatelessWidget {
   }
 }
 
-/// ---------------- Contact Support ----------------
+/// ---------------- CONTACT SUPPORT ----------------
+
 class ContactSupportScreen extends StatelessWidget {
   const ContactSupportScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
     return _InfoPageScaffold(
-      title: "Contact Support",
+      title: 'Contact Support',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            "Need help? Reach out to us through any of the channels below "
-            "and our team will get back to you as soon as possible.",
-            style: TextStyle(fontSize: 15, height: 1.4),
+            'Need help? Reach out to us through any of the channels below '
+            'and our team will get back to you as soon as possible.',
+            style: TextStyle(
+              fontSize: 15,
+              height: 1.4,
+            ),
           ),
+
           const SizedBox(height: 24),
-          Card(
+
+          const Card(
             child: ListTile(
-              leading: const Icon(Icons.email, color: Colors.blue),
-              title: const Text("Email"),
-              subtitle: const Text("support@123app.org"),
-              onTap: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text("Opening email app...")),
-                );
-              },
+              leading: Icon(
+                Icons.email,
+                color: Colors.blue,
+              ),
+              title: Text('Email'),
+              subtitle: Text('app123.2026@gmail.com'),
             ),
           ),
-          Card(
+
+          const Card(
             child: ListTile(
-              leading: const Icon(Icons.phone, color: Colors.blue),
-              title: const Text("Phone"),
-              subtitle: const Text("+91 98765 43210"),
-              onTap: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text("Opening dialer...")),
-                );
-              },
+              leading: Icon(
+                Icons.phone,
+                color: Colors.blue,
+              ),
+              title: Text('Phone'),
+              subtitle: Text('+91 9886657164'),
             ),
           ),
-          Card(
+
+          const Card(
             child: ListTile(
-              leading: const Icon(Icons.location_on, color: Colors.blue),
-              title: const Text("Office Address"),
-              subtitle: const Text("123 App Head Office,\nKarnataka, India"),
+              leading: Icon(
+                Icons.location_on,
+                color: Colors.blue,
+              ),
+              title: Text('Office Address'),
+              subtitle: Text(
+                'No. 1672/1673, Magadi Main Rd, '
+                'Muthuraya Swamy Extension, Sunkadakatte, '
+                'Bengaluru, Karnataka - 560091',
+              ),
             ),
           ),
+
           const SizedBox(height: 24),
+
           const Text(
-            "Support Hours",
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            'Support Hours',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
           ),
+
           const SizedBox(height: 8),
+
           const Text(
-            "Monday - Saturday: 9:00 AM - 6:00 PM\nSunday: Closed",
-            style: TextStyle(fontSize: 15, height: 1.4),
+            'Monday - Saturday: 9:00 AM - 6:00 PM\n'
+            'Sunday: Closed',
+            style: TextStyle(
+              fontSize: 15,
+              height: 1.4,
+            ),
           ),
         ],
       ),
@@ -373,19 +520,17 @@ class ContactSupportScreen extends StatelessWidget {
   }
 }
 
-/// ---------------- Privacy Policy ----------------
-/// Full text, shown as-is rather than the earlier condensed 6-point
-/// summary. App/organization name references updated to "123 App".
+/// ---------------- PRIVACY POLICY ----------------
+
 class PrivacyPolicyScreen extends StatelessWidget {
   const PrivacyPolicyScreen({super.key});
 
   static const String _privacyText = '''
-PRIVACY POLICY
+Application: 123 App
 
-123 App
+Effective Date: 05/10/2026
 
-Effective Date: [DD/MM/YYYY]
-Last Updated: [DD/MM/YYYY]
+Last Updated: 05/10/2026
 
 This Privacy Policy explains how 123 App ("we", "us", or "our") collects, uses, stores, protects, and shares information when you access or use the 123 App mobile application ("Application", "App", or "Platform").
 
@@ -585,7 +730,7 @@ Continued use of the Application after an updated Privacy Policy becomes effecti
 
 This Privacy Policy shall be governed by and interpreted in accordance with the applicable laws of India.
 
-Any disputes concerning this Privacy Policy shall be subject to the jurisdiction of the competent courts at [Bengaluru, Karnataka, India], subject to applicable law.
+Any disputes concerning this Privacy Policy shall be subject to the jurisdiction of the competent courts at Bengaluru, Karnataka, India, subject to applicable law.
 
 12. CONTACT & PRIVACY COMPLAINTS
 
@@ -595,13 +740,13 @@ Application:
 123 App
 
 Official Email:
-[Insert Official Email Address]
+app123.2026@gmail.com
 
 Contact Number:
-[Insert Official Contact Number]
++91 9886657164
 
 Office / Registered Address:
-[Insert Official Address]
+No. 1672/1673, Magadi Main Rd, Muthuraya Swamy Extension, Sunkadakatte, Bengaluru, Karnataka - 560091
 
 13. USER ACKNOWLEDGEMENT
 
@@ -623,7 +768,7 @@ By continuing to use 123 App, you acknowledge that you have read, understood, an
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Privacy Policy"),
+        title: const Text('Privacy Policy'),
         centerTitle: true,
       ),
       body: SafeArea(
@@ -631,7 +776,10 @@ By continuing to use 123 App, you acknowledge that you have read, understood, an
           padding: const EdgeInsets.all(20),
           child: Text(
             _privacyText,
-            style: const TextStyle(fontSize: 14, height: 1.5),
+            style: const TextStyle(
+              fontSize: 14,
+              height: 1.5,
+            ),
           ),
         ),
       ),
@@ -639,18 +787,18 @@ By continuing to use 123 App, you acknowledge that you have read, understood, an
   }
 }
 
-/// ---------------- Terms & Conditions ----------------
-/// Full text, shown as-is rather than the earlier condensed 6-point
-/// summary. App/organization name references updated to "123 App".
+/// ---------------- TERMS & CONDITIONS ----------------
+
 class TermsConditionsScreen extends StatelessWidget {
   const TermsConditionsScreen({super.key});
 
   static const String _termsText = '''
-TERMS & CONDITIONS
-123 App
+Terms & Conditions
+Application: 123 App
 
-Effective Date: [DD/MM/YYYY]
-Last Updated: [DD/MM/YYYY]
+Effective Date: 05/10/2026
+
+Last Updated: 05/10/2026
 
 These Terms & Conditions ("Terms") govern your access to and use of the 123 App mobile application ("Application", "App", or "Platform"), operated by 123 App ("we", "us", or "our").
 
@@ -682,6 +830,7 @@ These Terms should be read together with the Application's Privacy Policy and an
 2. APPLICATION PURPOSE, USER ELIGIBILITY & REGISTRATION
 
 2.1 Purpose of 123 App
+
 123 App is a digital industry and commerce platform developed to facilitate business discovery, industry networking, product and service visibility, requirement sharing, professional interaction, and communication between users.
 
 The Application is intended to bring together businesses and industries from different sectors and provide users with a common platform through which they may discover businesses, products, services, opportunities, requirements, and potential business connections.
@@ -692,14 +841,17 @@ The Application may be used by business owners, entrepreneurs, manufacturers, su
 The Application is intended to facilitate connections and information sharing. Unless specifically stated otherwise, 123 App does not itself become a party to any agreement, contract, purchase, sale, service arrangement, employment arrangement, partnership, or other transaction entered into between Users.
 
 2.3 User Eligibility
+
 Users must provide information that is accurate and appropriate to their actual identity or the organization they are authorized to represent.
 
 Where a User registers on behalf of a company, business, organization, institution, or other legal entity, the User represents that they have the authority to provide information and act on behalf of that entity.
 
 2.4 Mobile Number Registration
+
 The Application may require a User to register using a valid mobile number. The mobile number may be used for account creation, login, authentication, OTP verification, important service communications, security notifications, and other legitimate Application-related purposes.
 
 2.5 OTP Verification
+
 123 App may use a One-Time Password ("OTP") to verify access to the registered mobile number.
 
 The User is responsible for ensuring that the mobile number provided during registration belongs to them or that they are authorized to use it. The User must not attempt to register or access an account using another person's mobile number without authorization.
@@ -707,6 +859,7 @@ The User is responsible for ensuring that the mobile number provided during regi
 OTP verification is an authentication mechanism and does not necessarily constitute verification of the User's identity, business ownership, financial position, professional qualifications, company registration, or legal status.
 
 2.6 Account Security
+
 The User is responsible for maintaining the security of their account and registered mobile number. The User must not share OTPs, authentication codes, passwords, or other account security information with unauthorized persons.
 
 If the User believes that their account has been accessed without authorization, they should notify 123 App through the available support or contact mechanism as soon as reasonably possible.
@@ -899,24 +1052,29 @@ Nothing in these Terms transfers ownership of a User's intellectual property to 
 9. CONTENT MODERATION, ACCOUNT SUSPENSION, DISCLAIMER & LIABILITY
 
 9.1 Content Moderation
+
 123 App reserves the right to review, monitor where appropriate, restrict, hide, modify, disable, or remove User-generated content, profiles, listings, requirements, or other material where reasonably necessary to enforce these Terms, protect Users, maintain security, comply with applicable law, respond to lawful requests, or protect the rights and interests of 123 App or third parties.
 
 9.2 Account Suspension or Termination
+
 123 App may suspend, restrict, disable, or terminate a User's account or access to the Application where the User violates these Terms, provides materially false or misleading information, engages in fraudulent or unlawful conduct, misuses the Application, creates security risks, infringes third-party rights, or uses the Application in a manner that may cause harm to other Users or the Application.
 
 Where reasonably practicable, 123 App may provide notice before taking such action. However, immediate restriction or termination may be necessary where required to protect Users, systems, legal rights, or comply with applicable law.
 
 9.3 Application Availability
+
 The Application may occasionally become unavailable or experience interruptions because of maintenance, software updates, server or hosting issues, internet connectivity problems, third-party service failures, security incidents, technical failures, or circumstances beyond the reasonable control of 123 App.
 
 123 App does not guarantee that the Application will always be uninterrupted, completely error-free, continuously available, or free from technical defects.
 
 9.4 User-Provided Information
+
 123 App may display information submitted by Users. Because such information originates from Users, 123 App cannot guarantee that every listing, profile, requirement, product description, service description, business claim, or other User-generated information is accurate, complete, current, authentic, or reliable.
 
 Users should independently verify important information before relying on it.
 
 9.5 Limitation of Liability
+
 To the maximum extent permitted by applicable law, 123 App, its authorized representatives, employees, officers, affiliates, and service providers shall not be responsible for indirect, incidental, special, consequential, or punitive losses arising from the use of, or inability to use, the Application.
 
 This may include losses or disputes relating to User-generated information, products or services offered by Users, independent transactions, third-party conduct, fraudulent activities by other Users, loss of business opportunities, loss of revenue or profits, loss of data, technical interruptions, or third-party services, subject always to any liability that cannot legally be excluded or limited.
@@ -925,6 +1083,7 @@ This may include losses or disputes relating to User-generated information, prod
 Users acknowledge that communication and transactions with other Users involve risks and that they are responsible for exercising appropriate judgment and due diligence.
 
 9.7 Indemnification
+
 To the extent permitted by applicable law, a User agrees to indemnify and hold harmless 123 App and its authorized representatives against claims, losses, damages, liabilities, costs, and expenses arising from the User's violation of these Terms, unlawful conduct, submitted content, infringement of third-party rights, or misuse of the Application.
 
 9.8
@@ -933,6 +1092,7 @@ Nothing in these Terms is intended to exclude or limit any right, remedy, or lia
 10. COMPLAINTS, CHANGES, GOVERNING LAW & CONTACT INFORMATION
 
 10.1 Complaints and Reporting
+
 Users may report suspected fraudulent activity, fake or misleading listings, inappropriate content, impersonation, intellectual property violations, harassment, misuse of the Application, or other violations through the complaint or support mechanism provided by 123 App.
 
 10.2
@@ -942,6 +1102,7 @@ When submitting a complaint, Users should provide sufficient information to enab
 123 App may review complaints and take action that it considers appropriate based on the circumstances, these Terms, applicable policies, and applicable law. 123 App does not guarantee a particular outcome for every complaint.
 
 10.4 Changes to the Application
+
 123 App may, from time to time, introduce new features, modify existing features, change categories, update functionality, suspend certain services, or discontinue features of the Application.
 
 10.5
@@ -951,32 +1112,42 @@ Users may be required to install Application updates to maintain access to certa
 Where appropriate, 123 App may communicate material changes to the Terms or Application through the Application or other available communication channels.
 
 10.7 Severability
+
 If any provision of these Terms is determined by a competent authority or court to be invalid, unlawful, or unenforceable, that provision shall be interpreted or modified to the extent legally permissible, and the remaining provisions shall continue to remain in full force and effect.
 
 10.8 Governing Law
+
 These Terms shall be governed by and interpreted in accordance with the applicable laws of India.
 
 10.9 Jurisdiction
-Subject to applicable law, disputes arising from or relating to these Terms or the use of 123 App shall be subject to the jurisdiction of the competent courts at [Bengaluru, Karnataka, India], unless applicable law requires otherwise.
+
+Subject to applicable law, disputes arising from or relating to these Terms or the use of 123 App shall be subject to the jurisdiction of the competent courts at Bengaluru, Karnataka, India, unless applicable law requires otherwise.
 
 10.10 Contact Information
-For questions, technical support, complaints, grievances, legal notices, or other matters concerning the Application or these Terms, Users may contact:
 
-Application Name: 123 App
-Official Email: [Insert Official Email Address]
-Contact Number: [Insert Official Contact Number]
-Office / Registered Address: [Insert Official Address]
+Application Name:
+123 App
+
+Official Email:
+app123.2026@gmail.com
+
+Contact Number:
++91 9886657164
+
+Office / Registered Address:
+No. 1672/1673, Magadi Main Rd, Muthuraya Swamy Extension, Sunkadakatte, Bengaluru, Karnataka - 560091
 
 10.11 User Acknowledgement
+
 By clicking "I Agree", "Accept", registering an account, logging into the Application, accessing its features, or continuing to use 123 App, the User confirms that they:
 
-1. Have read and understood these Terms & Conditions.
-2. Agree to comply with these Terms and applicable laws.
-3. Confirm that the information provided by them is accurate to the best of their knowledge.
-4. Understand that information they voluntarily publish may be made available to other Users depending on the functionality of the Application.
-5. Understand that interactions and transactions with other Users may involve independent risks.
-6. Agree to use the Application responsibly, lawfully, and respectfully.
-7. Agree to be bound by these Terms & Conditions and other applicable policies of 123 App.
+Have read and understood these Terms & Conditions.
+Agree to comply with these Terms and applicable laws.
+Confirm that the information provided by them is accurate to the best of their knowledge.
+Understand that information they voluntarily publish may be made available to other Users depending on the functionality of the Application.
+Understand that interactions and transactions with other Users may involve independent risks.
+Agree to use the Application responsibly, lawfully, and respectfully.
+Agree to be bound by these Terms & Conditions and other applicable policies of 123 App.
 
 By continuing to use 123 App, you acknowledge that you have read, understood, and accepted these Terms & Conditions.
 ''';
@@ -985,7 +1156,7 @@ By continuing to use 123 App, you acknowledge that you have read, understood, an
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Terms & Conditions"),
+        title: const Text('Terms & Conditions'),
         centerTitle: true,
       ),
       body: SafeArea(
@@ -993,7 +1164,10 @@ By continuing to use 123 App, you acknowledge that you have read, understood, an
           padding: const EdgeInsets.all(20),
           child: Text(
             _termsText,
-            style: const TextStyle(fontSize: 14, height: 1.5),
+            style: const TextStyle(
+              fontSize: 14,
+              height: 1.5,
+            ),
           ),
         ),
       ),

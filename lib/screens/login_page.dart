@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-import 'welcome_screen.dart';
+import '../data/approved_member_ids.dart';
 import 'home_page.dart';
 import 'notification_service.dart';
 
@@ -14,6 +14,7 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
+  final TextEditingController memberIdController = TextEditingController();
   final TextEditingController phoneController = TextEditingController();
   final TextEditingController otpController = TextEditingController();
 
@@ -22,16 +23,22 @@ class _LoginPageState extends State<LoginPage> {
 
   String? verificationId;
 
-  /// Converts the entered phone number into a clean 10-digit number.
+  // Captured when OTP is requested, so later steps never depend on
+  // whatever is currently typed in the fields.
+  String? _memberId;
+  String? _phone;
+
+  // --------------------------------------------------
+  // PHONE NUMBER HELPERS
+  // --------------------------------------------------
+
   String getCleanPhoneNumber(String phone) {
     String cleanPhone = phone.replaceAll(RegExp(r'[^0-9]'), '');
 
-    // If user enters +91XXXXXXXXXX
     if (cleanPhone.startsWith('91') && cleanPhone.length == 12) {
       cleanPhone = cleanPhone.substring(2);
     }
 
-    // If user enters 0XXXXXXXXXX
     if (cleanPhone.startsWith('0') && cleanPhone.length == 11) {
       cleanPhone = cleanPhone.substring(1);
     }
@@ -39,29 +46,34 @@ class _LoginPageState extends State<LoginPage> {
     return cleanPhone;
   }
 
-  /// Firebase Phone Authentication needs country code.
   String getFirebasePhoneNumber(String phone) {
-    final cleanPhone = getCleanPhoneNumber(phone);
-    return '+91$cleanPhone';
+    return '+91${getCleanPhoneNumber(phone)}';
   }
 
-  /// Check whether the phone number is valid.
   bool isValidPhoneNumber(String phone) {
-    final cleanPhone = getCleanPhoneNumber(phone);
-
-    return RegExp(r'^[6-9][0-9]{9}$').hasMatch(cleanPhone);
+    return RegExp(r'^[6-9][0-9]{9}$').hasMatch(getCleanPhoneNumber(phone));
   }
 
-  /// Main login function.
-  ///
-  /// Every phone number is verified via OTP first — whether the member
-  /// is already registered or not. Once the OTP is confirmed,
-  /// _routeAfterOtpVerified() decides where they go next.
+  // --------------------------------------------------
+  // STEP 1: VALIDATE MEMBER ID (approved list) + PHONE FORMAT
+  // --------------------------------------------------
+
   Future<void> login() async {
+    final memberId = memberIdController.text.trim();
     final enteredPhone = phoneController.text.trim();
 
+    if (memberId.isEmpty) {
+      showMessage("Enter your Member ID");
+      return;
+    }
+
+    if (!ApprovedMemberIds.isApproved(memberId)) {
+      showMessage("Invalid Member ID. You are not authorized to login.");
+      return;
+    }
+
     if (enteredPhone.isEmpty) {
-      showMessage("Enter phone number");
+      showMessage("Enter your phone number");
       return;
     }
 
@@ -70,62 +82,49 @@ class _LoginPageState extends State<LoginPage> {
       return;
     }
 
-    final phone = getCleanPhoneNumber(enteredPhone);
+    _memberId = memberId;
+    _phone = getCleanPhoneNumber(enteredPhone);
 
-    setState(() {
-      isLoading = true;
-    });
+    setState(() => isLoading = true);
 
-    await sendOtp(phone);
+    await sendOtp(_phone!);
   }
 
-  /// Send OTP using Firebase Phone Authentication.
+  // --------------------------------------------------
+  // STEP 2: SEND OTP
+  // --------------------------------------------------
+
   Future<void> sendOtp(String phone) async {
     final firebasePhone = getFirebasePhoneNumber(phone);
 
     try {
       await FirebaseAuth.instance.verifyPhoneNumber(
         phoneNumber: firebasePhone,
-
         timeout: const Duration(seconds: 60),
 
         verificationCompleted: (PhoneAuthCredential credential) async {
-          /*
-           * Android can sometimes automatically detect the OTP.
-           *
-           * We still sign in automatically here, then run the same
-           * routing decision as manual OTP entry.
-           */
           try {
             await FirebaseAuth.instance.signInWithCredential(credential);
 
             if (!mounted) return;
 
-            await _routeAfterOtpVerified(phone);
+            await _routeAfterOtpVerified();
           } catch (e) {
-            if (mounted) {
-              setState(() {
-                isLoading = false;
-              });
+            if (!mounted) return;
 
-              showMessage("Automatic verification failed: $e");
-            }
+            setState(() => isLoading = false);
+            showMessage("Automatic verification failed: $e");
           }
         },
 
         verificationFailed: (FirebaseAuthException e) {
-          debugPrint('====================================');
           debugPrint('FIREBASE PHONE AUTH ERROR');
           debugPrint('ERROR CODE: ${e.code}');
           debugPrint('ERROR MESSAGE: ${e.message}');
-          debugPrint('====================================');
 
           if (!mounted) return;
 
-          setState(() {
-            isLoading = false;
-          });
-
+          setState(() => isLoading = false);
           showMessage('${e.code}: ${e.message}');
         },
 
@@ -147,23 +146,20 @@ class _LoginPageState extends State<LoginPage> {
         },
       );
     } catch (e, stackTrace) {
-      debugPrint('====================================');
-      debugPrint('OTP SEND ERROR');
-      debugPrint('ERROR: $e');
+      debugPrint('OTP SEND ERROR: $e');
       debugPrint('STACK TRACE: $stackTrace');
-      debugPrint('====================================');
 
       if (!mounted) return;
 
-      setState(() {
-        isLoading = false;
-      });
-
+      setState(() => isLoading = false);
       showMessage("Unable to send OTP: $e");
     }
   }
 
-  /// Verify OTP entered by the member.
+  // --------------------------------------------------
+  // STEP 3: VERIFY OTP
+  // --------------------------------------------------
+
   Future<void> verifyOtp() async {
     final otp = otpController.text.trim();
 
@@ -182,9 +178,7 @@ class _LoginPageState extends State<LoginPage> {
       return;
     }
 
-    setState(() {
-      isLoading = true;
-    });
+    setState(() => isLoading = true);
 
     try {
       final credential = PhoneAuthProvider.credential(
@@ -196,15 +190,11 @@ class _LoginPageState extends State<LoginPage> {
 
       if (!mounted) return;
 
-      final phone = getCleanPhoneNumber(phoneController.text.trim());
-
-      await _routeAfterOtpVerified(phone);
+      await _routeAfterOtpVerified();
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
 
-      setState(() {
-        isLoading = false;
-      });
+      setState(() => isLoading = false);
 
       String message = "Invalid OTP";
 
@@ -220,86 +210,194 @@ class _LoginPageState extends State<LoginPage> {
     } catch (e) {
       if (!mounted) return;
 
-      setState(() {
-        isLoading = false;
-      });
-
+      setState(() => isLoading = false);
       showMessage("OTP verification failed: $e");
     }
   }
 
-  /// Called once the phone number has been verified via OTP (either by
-  /// auto-retrieval or manual entry). Looks up the member in Firestore
-  /// and sends them to the right place:
-  ///   - already registered  -> straight into the Dashboard
-  ///   - not registered yet  -> WelcomeScreen to pick a category, then
-  ///                            fill in their profile (no further OTP —
-  ///                            the phone is already verified)
-  Future<void> _routeAfterOtpVerified(String phone) async {
+  // --------------------------------------------------
+  // STEP 4: FIND MEMBER USING MEMBER ID
+  // --------------------------------------------------
+
+  Future<DocumentSnapshot<Map<String, dynamic>>?> findMemberById(
+    String memberId,
+  ) async {
+    final members = FirebaseFirestore.instance.collection('members');
+
+    // Registration saves "memberId"; existing records may use
+    // "membershipNumber". Search both and merge by document ID.
+    final memberIdQuery =
+        await members.where('memberId', isEqualTo: memberId).limit(2).get();
+
+    final membershipNumberQuery = await members
+        .where('membershipNumber', isEqualTo: memberId)
+        .limit(2)
+        .get();
+
+    final Map<String, DocumentSnapshot<Map<String, dynamic>>> matches = {};
+
+    for (final doc in memberIdQuery.docs) {
+      matches[doc.id] = doc;
+    }
+
+    for (final doc in membershipNumberQuery.docs) {
+      matches[doc.id] = doc;
+    }
+
+    if (matches.isEmpty) return null;
+
+    if (matches.length > 1) {
+      throw Exception("Multiple member records found for this Member ID.");
+    }
+
+    return matches.values.first;
+  }
+
+  // --------------------------------------------------
+  // Sign out, reset to the first step and show a reason.
+  // Used for every post-OTP rejection so an unauthorized
+  // session is never left open.
+  // --------------------------------------------------
+
+  Future<void> _rejectLogin(String message) async {
+    await FirebaseAuth.instance.signOut();
+
+    if (!mounted) return;
+
+    setState(() {
+      isLoading = false;
+      otpSent = false;
+      verificationId = null;
+      otpController.clear();
+    });
+
+    showMessage(message);
+  }
+
+  // --------------------------------------------------
+  // STEP 5: CHECK MEMBER RECORD AFTER OTP
+  // --------------------------------------------------
+
+  Future<void> _routeAfterOtpVerified() async {
     try {
-      final member = await FirebaseFirestore.instance
-          .collection('members')
-          .doc(phone)
-          .get();
+      final memberId = _memberId ?? memberIdController.text.trim();
+
+      if (!ApprovedMemberIds.isApproved(memberId)) {
+        await _rejectLogin("Invalid Member ID.");
+        return;
+      }
+
+      final member = await findMemberById(memberId);
 
       if (!mounted) return;
 
-      if (member.exists) {
-        await loginAfterOtp(phone);
-      } else {
-        setState(() {
-          isLoading = false;
-        });
-
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) => WelcomeScreen(phone: phone),
-          ),
+      if (member == null) {
+        await _rejectLogin(
+          "Member record not found. Please contact the administrator.",
         );
+        return;
       }
+
+      final memberData = member.data();
+
+      if (memberData == null) {
+        await _rejectLogin("Unable to load member details.");
+        return;
+      }
+
+      // The phone that just passed OTP must be the phone registered for
+      // this Member ID. Without this check, anyone who knows an approved
+      // Member ID could log in as that member using their own phone.
+      final verifiedPhone = getCleanPhoneNumber(
+        FirebaseAuth.instance.currentUser?.phoneNumber ?? '',
+      );
+
+      final registeredPhone = getCleanPhoneNumber(
+        (memberData['phone'] ?? member.id).toString(),
+      );
+
+      if (verifiedPhone.isEmpty || verifiedPhone != registeredPhone) {
+        await _rejectLogin(
+          "This phone number does not match the one registered for this Member ID.",
+        );
+        return;
+      }
+
+      if (memberData['active'] != true) {
+        await _rejectLogin(
+          "Your membership is inactive. Please contact the administrator.",
+        );
+        return;
+      }
+
+      await loginAfterOtp(member.id);
     } catch (e) {
       if (!mounted) return;
 
-      setState(() {
-        isLoading = false;
-      });
-
-      showMessage("Error: $e");
+      setState(() => isLoading = false);
+      showMessage("Login error: $e");
     }
   }
 
-  /// Called for an already-registered member once OTP is verified.
-  Future<void> loginAfterOtp(String phone) async {
+  // --------------------------------------------------
+  // STEP 6: OPEN DASHBOARD
+  // --------------------------------------------------
+
+  Future<void> loginAfterOtp(String firestoreDocumentId) async {
     try {
-      /*
-       * Save / initialize notification service.
-       */
-      await NotificationService.initialize(phone);
+      await NotificationService.initialize(firestoreDocumentId);
 
       if (!mounted) return;
 
       Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(
-          builder: (_) => DashboardPage(
-            memberId: phone,
-          ),
+          builder: (_) => DashboardPage(memberId: firestoreDocumentId),
         ),
         (route) => false,
       );
     } catch (e) {
       if (!mounted) return;
 
-      setState(() {
-        isLoading = false;
-      });
-
+      setState(() => isLoading = false);
       showMessage("Login successful, but dashboard could not open: $e");
     }
   }
 
-  /// Show snackbar.
+  // --------------------------------------------------
+  // RESEND OTP
+  // --------------------------------------------------
+
+  Future<void> resendOtp() async {
+    final phone = _phone;
+
+    if (phone == null || !isValidPhoneNumber(phone)) {
+      changePhoneNumber();
+      showMessage("Please enter your details again.");
+      return;
+    }
+
+    setState(() {
+      isLoading = true;
+      otpController.clear();
+    });
+
+    await sendOtp(phone);
+  }
+
+  // --------------------------------------------------
+  // CHANGE DETAILS
+  // --------------------------------------------------
+
+  void changePhoneNumber() {
+    setState(() {
+      otpSent = false;
+      verificationId = null;
+      otpController.clear();
+      isLoading = false;
+    });
+  }
+
   void showMessage(String message) {
     if (!mounted) return;
 
@@ -313,97 +411,85 @@ class _LoginPageState extends State<LoginPage> {
       );
   }
 
-  /// Resend OTP.
-  Future<void> resendOtp() async {
-    final phone = getCleanPhoneNumber(phoneController.text.trim());
-
-    if (!isValidPhoneNumber(phone)) {
-      showMessage("Invalid phone number");
-      return;
-    }
-
-    setState(() {
-      isLoading = true;
-      otpController.clear();
-    });
-
-    await sendOtp(phone);
-  }
-
-  /// Go back from OTP screen to phone number screen.
-  void changePhoneNumber() {
-    setState(() {
-      otpSent = false;
-      verificationId = null;
-      otpController.clear();
-      isLoading = false;
-    });
-  }
-
   @override
   void dispose() {
+    memberIdController.dispose();
     phoneController.dispose();
     otpController.dispose();
     super.dispose();
   }
 
+  Widget _primaryButton({
+    required String label,
+    required VoidCallback onPressed,
+  }) {
+    return SizedBox(
+      width: double.infinity,
+      height: 55,
+      child: ElevatedButton(
+        onPressed: isLoading ? null : onPressed,
+        style: ElevatedButton.styleFrom(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(15),
+          ),
+        ),
+        child: isLoading
+            ? const SizedBox(
+                height: 24,
+                width: 24,
+                child: CircularProgressIndicator(
+                  color: Colors.white,
+                  strokeWidth: 2.5,
+                ),
+              )
+            : Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+      ),
+    );
+  }
+
+  // --------------------------------------------------
+  // UI
+  // --------------------------------------------------
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.grey.shade100,
-
       appBar: AppBar(
         title: const Text("Member Login"),
         centerTitle: true,
       ),
-
       body: SafeArea(
         child: SingleChildScrollView(
           child: Padding(
             padding: const EdgeInsets.all(25),
-
             child: Column(
               children: [
                 const SizedBox(height: 20),
 
-                // ------------------------------------------------
-                // LOGO
-                // ------------------------------------------------
                 Container(
                   height: 140,
                   width: 140,
-
                   decoration: BoxDecoration(
                     color: Colors.white,
                     shape: BoxShape.circle,
-
                     boxShadow: [
-                      BoxShadow(
-                        color: Colors.grey.shade300,
-                        blurRadius: 10,
-                      ),
+                      BoxShadow(color: Colors.grey.shade300, blurRadius: 10),
                     ],
                   ),
-
                   child: Padding(
                     padding: const EdgeInsets.all(15),
-
-                    // NOTE: pubspec.yaml declares
-                    // assets/images/logo.jpeg (not .png) — this path
-                    // must match exactly or Image.asset silently falls
-                    // through to errorBuilder.
                     child: Image.asset(
                       'assets/images/logo.jpeg',
-
                       height: 120,
-
                       fit: BoxFit.contain,
-
-                      errorBuilder: (
-                        context,
-                        error,
-                        stackTrace,
-                      ) {
+                      errorBuilder: (context, error, stackTrace) {
                         return const Icon(
                           Icons.account_balance,
                           size: 60,
@@ -416,12 +502,8 @@ class _LoginPageState extends State<LoginPage> {
 
                 const SizedBox(height: 25),
 
-                // ------------------------------------------------
-                // APP NAME
-                // ------------------------------------------------
                 const Text(
-                  "123",
-
+                  "123 App",
                   style: TextStyle(
                     fontSize: 30,
                     fontWeight: FontWeight.bold,
@@ -431,25 +513,15 @@ class _LoginPageState extends State<LoginPage> {
 
                 const SizedBox(height: 10),
 
-
-                // ------------------------------------------------
-                // LOGIN / OTP CARD
-                // ------------------------------------------------
                 Card(
                   elevation: 6,
-
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(20),
                   ),
-
                   child: Padding(
                     padding: const EdgeInsets.all(20),
-
                     child: Column(
                       children: [
-                        // ====================================================
-                        // PHONE NUMBER SCREEN
-                        // ====================================================
                         if (!otpSent) ...[
                           const Text(
                             "Member Login",
@@ -458,236 +530,108 @@ class _LoginPageState extends State<LoginPage> {
                               fontWeight: FontWeight.bold,
                             ),
                           ),
-
                           const SizedBox(height: 8),
-
                           const Text(
-                            "Enter your phone number",
+                            "Enter your Member ID and registered phone number",
                             textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: Colors.grey,
-                              fontSize: 14,
+                            style: TextStyle(color: Colors.grey, fontSize: 14),
+                          ),
+                          const SizedBox(height: 25),
+                          TextField(
+                            controller: memberIdController,
+                            keyboardType: TextInputType.text,
+                            textCapitalization: TextCapitalization.characters,
+                            enabled: !isLoading,
+                            decoration: InputDecoration(
+                              labelText: "Member ID",
+                              hintText: "Enter your Member ID",
+                              prefixIcon: const Icon(Icons.badge),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(15),
+                              ),
                             ),
                           ),
-
-                          const SizedBox(height: 25),
-
+                          const SizedBox(height: 20),
                           TextField(
                             controller: phoneController,
-
                             keyboardType: TextInputType.phone,
-
                             maxLength: 10,
-
                             enabled: !isLoading,
-
                             decoration: InputDecoration(
-                              labelText: "Phone Number",
+                              labelText: "Registered Phone Number",
                               hintText: "Enter 10-digit phone number",
-
-                              prefixIcon: const Icon(
-                                Icons.phone,
-                              ),
-
+                              prefixIcon: const Icon(Icons.phone),
                               counterText: "",
-
                               border: OutlineInputBorder(
-                                borderRadius:
-                                    BorderRadius.circular(15),
+                                borderRadius: BorderRadius.circular(15),
                               ),
                             ),
                           ),
-
                           const SizedBox(height: 25),
-
-                          SizedBox(
-                            width: double.infinity,
-                            height: 55,
-
-                            child: ElevatedButton(
-                              onPressed: isLoading
-                                  ? null
-                                  : login,
-
-                              style:
-                                  ElevatedButton.styleFrom(
-                                shape:
-                                    RoundedRectangleBorder(
-                                  borderRadius:
-                                      BorderRadius.circular(
-                                    15,
-                                  ),
-                                ),
-                              ),
-
-                              child: isLoading
-                                  ? const SizedBox(
-                                      height: 24,
-                                      width: 24,
-
-                                      child:
-                                          CircularProgressIndicator(
-                                        color: Colors.white,
-                                        strokeWidth: 2.5,
-                                      ),
-                                    )
-                                  : const Text(
-                                      "CONTINUE",
-
-                                      style: TextStyle(
-                                        fontSize: 18,
-                                        fontWeight:
-                                            FontWeight.bold,
-                                      ),
-                                    ),
-                            ),
-                          ),
-                        ]
-
-                        // ====================================================
-                        // OTP SCREEN
-                        // ====================================================
-                        else ...[
+                          _primaryButton(label: "SEND OTP", onPressed: login),
+                        ] else ...[
                           const Icon(
                             Icons.verified_user,
                             size: 55,
                             color: Colors.blue,
                           ),
-
                           const SizedBox(height: 15),
-
                           const Text(
                             "OTP Verification",
-
                             style: TextStyle(
                               fontSize: 22,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
-
                           const SizedBox(height: 8),
-
                           Text(
-                            "Enter the OTP sent to\n"
-                            "+91 ${getCleanPhoneNumber(phoneController.text)}",
-
+                            "Enter the OTP sent to\n+91 ${_phone ?? ''}",
                             textAlign: TextAlign.center,
-
                             style: const TextStyle(
                               color: Colors.grey,
                               fontSize: 14,
                             ),
                           ),
-
                           const SizedBox(height: 25),
-
                           TextField(
                             controller: otpController,
-
-                            keyboardType:
-                                TextInputType.number,
-
+                            keyboardType: TextInputType.number,
                             maxLength: 6,
-
                             enabled: !isLoading,
-
                             textAlign: TextAlign.center,
-
                             style: const TextStyle(
                               fontSize: 24,
                               fontWeight: FontWeight.bold,
                               letterSpacing: 8,
                             ),
-
                             decoration: InputDecoration(
                               labelText: "Enter OTP",
                               hintText: "------",
-
                               counterText: "",
-
-                              prefixIcon: const Icon(
-                                Icons.lock_outline,
-                              ),
-
+                              prefixIcon: const Icon(Icons.lock_outline),
                               border: OutlineInputBorder(
-                                borderRadius:
-                                    BorderRadius.circular(15),
+                                borderRadius: BorderRadius.circular(15),
                               ),
                             ),
                           ),
-
                           const SizedBox(height: 25),
-
-                          SizedBox(
-                            width: double.infinity,
-                            height: 55,
-
-                            child: ElevatedButton(
-                              onPressed: isLoading
-                                  ? null
-                                  : verifyOtp,
-
-                              style:
-                                  ElevatedButton.styleFrom(
-                                shape:
-                                    RoundedRectangleBorder(
-                                  borderRadius:
-                                      BorderRadius.circular(
-                                    15,
-                                  ),
-                                ),
-                              ),
-
-                              child: isLoading
-                                  ? const SizedBox(
-                                      height: 24,
-                                      width: 24,
-
-                                      child:
-                                          CircularProgressIndicator(
-                                        color: Colors.white,
-                                        strokeWidth: 2.5,
-                                      ),
-                                    )
-                                  : const Text(
-                                      "VERIFY & CONTINUE",
-
-                                      style: TextStyle(
-                                        fontSize: 18,
-                                        fontWeight:
-                                            FontWeight.bold,
-                                      ),
-                                    ),
-                            ),
+                          _primaryButton(
+                            label: "VERIFY & CONTINUE",
+                            onPressed: verifyOtp,
                           ),
-
                           const SizedBox(height: 15),
-
                           Row(
-                            mainAxisAlignment:
-                                MainAxisAlignment.center,
-
+                            mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               TextButton(
-                                onPressed: isLoading
-                                    ? null
-                                    : changePhoneNumber,
-
-                                child: const Text(
-                                  "Change Number",
-                                ),
+                                onPressed:
+                                    isLoading ? null : changePhoneNumber,
+                                child: const Text("Change Details"),
                               ),
-
                               const SizedBox(width: 10),
-
                               TextButton(
-                                onPressed: isLoading
-                                    ? null
-                                    : resendOtp,
-
-                                child: const Text(
-                                  "Resend OTP",
-                                ),
+                                onPressed: isLoading ? null : resendOtp,
+                                child: const Text("Resend OTP"),
                               ),
                             ],
                           ),
@@ -700,13 +644,9 @@ class _LoginPageState extends State<LoginPage> {
                 const SizedBox(height: 30),
 
                 const Text(
-                  "Welcome to 123 Member Portal",
-
+                  "Welcome to 123 App Member Portal",
                   textAlign: TextAlign.center,
-
-                  style: TextStyle(
-                    color: Colors.grey,
-                  ),
+                  style: TextStyle(color: Colors.grey),
                 ),
               ],
             ),

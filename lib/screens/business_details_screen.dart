@@ -1,3 +1,4 @@
+
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -12,31 +13,27 @@ import 'home_page.dart';
 class BusinessDetailsScreen extends StatefulWidget {
   final String memberId;
 
-  const BusinessDetailsScreen({super.key, required this.memberId});
+  const BusinessDetailsScreen({
+    super.key,
+    required this.memberId,
+  });
 
   @override
-  State<BusinessDetailsScreen> createState() => _BusinessDetailsScreenState();
+  State<BusinessDetailsScreen> createState() =>
+      _BusinessDetailsScreenState();
 }
 
-class _BusinessDetailsScreenState extends State<BusinessDetailsScreen> {
+class _BusinessDetailsScreenState
+    extends State<BusinessDetailsScreen> {
   final businessNameController = TextEditingController();
-
   final ownerNameController = TextEditingController();
-
   final contactController = TextEditingController();
-
   final emailController = TextEditingController();
-
   final websiteController = TextEditingController();
-
   final addressController = TextEditingController();
-
   final districtController = TextEditingController();
-
   final pincodeController = TextEditingController();
-
   final descriptionController = TextEditingController();
-
   final otherIndustryController = TextEditingController();
 
   String? selectedIndustry;
@@ -49,6 +46,8 @@ class _BusinessDetailsScreenState extends State<BusinessDetailsScreen> {
   String? imageName;
 
   bool isLoading = false;
+  bool isCheckingAccess = true;
+  bool isBusinessMember = false;
 
   final List<String> industries = [
     'Manufacturing',
@@ -125,55 +124,194 @@ class _BusinessDetailsScreenState extends State<BusinessDetailsScreen> {
     'Yadgir',
   ];
 
-  Future<void> pickPdf() async {
-    FilePickerResult? result = await FilePicker.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['pdf'],
-      withData: true,
-    );
+  @override
+  void initState() {
+    super.initState();
+    verifyBusinessAccess();
+  }
 
-    if (result != null) {
+  // --------------------------------------------------
+  // BUSINESS MEMBER ACCESS VERIFICATION
+  // --------------------------------------------------
+
+  Future<bool> hasBusinessAccess() async {
+    final memberDoc = await FirebaseFirestore.instance
+        .collection('members')
+        .doc(widget.memberId)
+        .get();
+
+    if (!memberDoc.exists) {
+      return false;
+    }
+
+    final data = memberDoc.data();
+
+    if (data == null) {
+      return false;
+    }
+
+    final userType = (data['userType'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+
+    final isActive = data['active'] == true;
+
+    return userType == 'business' && isActive;
+  }
+
+  Future<void> verifyBusinessAccess() async {
+    try {
+      final allowed = await hasBusinessAccess();
+
+      if (!mounted) return;
+
       setState(() {
-        pdfBytes = result.files.single.bytes;
+        isBusinessMember = allowed;
+        isCheckingAccess = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
 
-        pdfName = result.files.single.name;
+      setState(() {
+        isBusinessMember = false;
+        isCheckingAccess = false;
       });
     }
   }
 
-  /// Picks a visiting card image from the gallery and compresses it
-  /// before storing it in [imageBytes], so uploads are smaller and faster.
-  Future<void> pickVisitingCard() async {
-    final picker = ImagePicker();
+  // --------------------------------------------------
+  // PDF UPLOAD
+  // --------------------------------------------------
 
-    final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+  Future<void> pickPdf() async {
+    if (!isBusinessMember || isLoading) return;
 
-    if (image == null) return;
+    try {
+      final result = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf'],
+        withData: true,
+      );
 
-    final Uint8List originalBytes = await image.readAsBytes();
+      if (result != null &&
+          result.files.isNotEmpty &&
+          result.files.single.bytes != null) {
+        if (!mounted) return;
 
-    final Uint8List compressedBytes =
-        await FlutterImageCompress.compressWithList(originalBytes, quality: 70);
+        setState(() {
+          pdfBytes = result.files.single.bytes;
+          pdfName = result.files.single.name;
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
 
-    setState(() {
-      imageBytes = compressedBytes;
-      imageName = image.name;
-    });
-
-    if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Image compressed successfully")),
+        SnackBar(
+          content: Text('Unable to select PDF: $e'),
+        ),
       );
     }
   }
 
+  // --------------------------------------------------
+  // VISITING CARD IMAGE UPLOAD
+  // --------------------------------------------------
+
+  Future<void> pickVisitingCard() async {
+    if (!isBusinessMember || isLoading) return;
+
+    try {
+      final picker = ImagePicker();
+
+      final XFile? image = await picker.pickImage(
+        source: ImageSource.gallery,
+      );
+
+      if (image == null) return;
+
+      final Uint8List originalBytes = await image.readAsBytes();
+
+      final Uint8List compressedBytes =
+          await FlutterImageCompress.compressWithList(
+        originalBytes,
+        quality: 70,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        imageBytes = compressedBytes;
+        imageName = image.name;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Image compressed successfully'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Unable to select image: $e'),
+        ),
+      );
+    }
+  }
+
+  // --------------------------------------------------
+  // SAVE BUSINESS DETAILS
+  // --------------------------------------------------
+
   Future<void> saveBusiness() async {
+    if (isLoading) return;
+
     if (businessNameController.text.trim().isEmpty ||
         ownerNameController.text.trim().isEmpty ||
         contactController.text.trim().isEmpty ||
         selectedIndustry == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please fill required fields")),
+        const SnackBar(
+          content: Text('Please fill required fields'),
+        ),
+      );
+      return;
+    }
+
+    // Verify member role again before uploading or saving.
+    bool allowed;
+
+    try {
+      allowed = await hasBusinessAccess();
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Unable to verify your account. Please try again.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+
+    if (!allowed) {
+      setState(() {
+        isBusinessMember = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Access denied. Only active Business members can save Business Details.',
+          ),
+        ),
       );
       return;
     }
@@ -183,69 +321,109 @@ class _BusinessDetailsScreenState extends State<BusinessDetailsScreen> {
     });
 
     try {
+      final memberId = widget.memberId;
+
       String? companyProfileUrl;
       String? visitingCardUrl;
 
-      final memberId = widget.memberId;
-
+      // Upload company profile PDF.
       if (pdfBytes != null) {
-        final pdfRef = FirebaseStorage.instance.ref().child(
-          'company_profiles/$memberId/profile.pdf',
-        );
+        final pdfRef = FirebaseStorage.instance
+            .ref()
+            .child('company_profiles/$memberId/profile.pdf');
 
-        await pdfRef.putData(pdfBytes!);
+        await pdfRef.putData(
+          pdfBytes!,
+          SettableMetadata(
+            contentType: 'application/pdf',
+          ),
+        );
 
         companyProfileUrl = await pdfRef.getDownloadURL();
       }
 
-      /// imageBytes now contains the compressed image, so this upload
-      /// is unchanged but automatically smaller and faster.
+      // Upload visiting card image.
       if (imageBytes != null) {
-        final imageRef = FirebaseStorage.instance.ref().child(
-          'visiting_cards/$memberId/visiting_card.jpg',
-        );
+        final imageRef = FirebaseStorage.instance
+            .ref()
+            .child('visiting_cards/$memberId/visiting_card.jpg');
 
-        await imageRef.putData(imageBytes!);
+        await imageRef.putData(
+          imageBytes!,
+          SettableMetadata(
+            contentType: 'image/jpeg',
+          ),
+        );
 
         visitingCardUrl = await imageRef.getDownloadURL();
       }
 
-      await FirebaseFirestore.instance
+      // Business document reference.
+      final businessRef = FirebaseFirestore.instance
           .collection('businesses')
-          .doc(memberId)
-          .set({
-            'memberId': memberId,
-            'businessName': businessNameController.text.trim(),
-            'ownerName': ownerNameController.text.trim(),
-            'contactNumber': contactController.text.trim(),
-            'email': emailController.text.trim(),
-            'website': websiteController.text.trim(),
-            'address': addressController.text.trim(),
-            'district': districtController.text.trim(),
-            'pincode': pincodeController.text.trim(),
-            'industryType': selectedIndustry,
-            'customIndustry': otherIndustryController.text.trim(),
-            'description': descriptionController.text.trim(),
-            'companyProfileUrl': companyProfileUrl ?? '',
-            'visitingCardUrl': visitingCardUrl ?? '',
-            'createdAt': FieldValue.serverTimestamp(),
-          });
+          .doc(memberId);
+
+      // Read existing data to preserve previous URLs and createdAt.
+      final existingBusiness = await businessRef.get();
+      final existingData = existingBusiness.data();
+
+      await businessRef.set(
+        {
+          'memberId': memberId,
+          'businessName': businessNameController.text.trim(),
+          'ownerName': ownerNameController.text.trim(),
+          'contactNumber': contactController.text.trim(),
+          'email': emailController.text.trim(),
+          'website': websiteController.text.trim(),
+          'address': addressController.text.trim(),
+          'district': districtController.text.trim(),
+          'pincode': pincodeController.text.trim(),
+          'industryType': selectedIndustry,
+          'customIndustry': otherIndustryController.text.trim(),
+          'description': descriptionController.text.trim(),
+
+          // Preserve existing URLs if no new file is selected.
+          'companyProfileUrl': companyProfileUrl ??
+              existingData?['companyProfileUrl'] ??
+              '',
+          'visitingCardUrl': visitingCardUrl ??
+              existingData?['visitingCardUrl'] ??
+              '',
+
+          // Preserve original creation date.
+          'createdAt': existingData?['createdAt'] ??
+              FieldValue.serverTimestamp(),
+
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Business Details Saved')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Business Details Saved Successfully'),
+        ),
+      );
 
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => DashboardPage(memberId: memberId)),
+        MaterialPageRoute(
+          builder: (_) => DashboardPage(
+            memberId: memberId,
+          ),
+        ),
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(e.toString())));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Unable to save Business Details: $e',
+            ),
+          ),
+        );
       }
     } finally {
       if (mounted) {
@@ -255,6 +433,10 @@ class _BusinessDetailsScreenState extends State<BusinessDetailsScreen> {
       }
     }
   }
+
+  // --------------------------------------------------
+  // DISPOSE CONTROLLERS
+  // --------------------------------------------------
 
   @override
   void dispose() {
@@ -268,15 +450,27 @@ class _BusinessDetailsScreenState extends State<BusinessDetailsScreen> {
     pincodeController.dispose();
     descriptionController.dispose();
     otherIndustryController.dispose();
+
     super.dispose();
   }
 
+  // --------------------------------------------------
+  // SECTION HEADER
+  // --------------------------------------------------
+
   Widget sectionHeader(String title, IconData icon) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 14, top: 6),
+      padding: const EdgeInsets.only(
+        bottom: 14,
+        top: 6,
+      ),
       child: Row(
         children: [
-          Icon(icon, size: 20, color: Colors.indigo),
+          Icon(
+            icon,
+            size: 20,
+            color: Colors.indigo,
+          ),
           const SizedBox(width: 8),
           Text(
             title,
@@ -290,6 +484,10 @@ class _BusinessDetailsScreenState extends State<BusinessDetailsScreen> {
       ),
     );
   }
+
+  // --------------------------------------------------
+  // TEXT FIELD
+  // --------------------------------------------------
 
   Widget textField(
     TextEditingController controller,
@@ -307,25 +505,38 @@ class _BusinessDetailsScreenState extends State<BusinessDetailsScreen> {
         maxLines: maxLines,
         decoration: InputDecoration(
           labelText: label,
-          prefixIcon: icon != null ? Icon(icon, size: 20) : null,
+          prefixIcon: icon != null
+              ? Icon(icon, size: 20)
+              : null,
           filled: true,
           fillColor: Colors.grey.shade50,
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: Colors.grey.shade300),
+            borderSide: BorderSide(
+              color: Colors.grey.shade300,
+            ),
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: Colors.grey.shade300),
+            borderSide: BorderSide(
+              color: Colors.grey.shade300,
+            ),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Colors.indigo, width: 1.5),
+            borderSide: const BorderSide(
+              color: Colors.indigo,
+              width: 1.5,
+            ),
           ),
         ),
       ),
     );
   }
+
+  // --------------------------------------------------
+  // SECTION CARD
+  // --------------------------------------------------
 
   Widget sectionCard({required Widget child}) {
     return Container(
@@ -347,6 +558,10 @@ class _BusinessDetailsScreenState extends State<BusinessDetailsScreen> {
     );
   }
 
+  // --------------------------------------------------
+  // UPLOAD TILE
+  // --------------------------------------------------
+
   Widget uploadTile({
     required IconData icon,
     required String label,
@@ -358,11 +573,16 @@ class _BusinessDetailsScreenState extends State<BusinessDetailsScreen> {
       borderRadius: BorderRadius.circular(14),
       child: Container(
         width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 14),
+        padding: const EdgeInsets.symmetric(
+          vertical: 16,
+          horizontal: 14,
+        ),
         decoration: BoxDecoration(
           color: color.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: color.withValues(alpha: 0.4)),
+          border: Border.all(
+            color: color.withValues(alpha: 0.4),
+          ),
         ),
         child: Row(
           children: [
@@ -372,153 +592,161 @@ class _BusinessDetailsScreenState extends State<BusinessDetailsScreen> {
               child: Text(
                 label,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontWeight: FontWeight.w600, color: color),
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: color,
+                ),
               ),
             ),
-            Icon(Icons.chevron_right, color: color),
+            Icon(
+              Icons.chevron_right,
+              color: color,
+            ),
           ],
         ),
       ),
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.grey.shade100,
-      appBar: AppBar(title: const Text("Business Details"), centerTitle: true),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(18),
+  // --------------------------------------------------
+  // ACCESS DENIED SCREEN
+  // --------------------------------------------------
+
+  Widget accessDeniedView() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            /// ---- Basic Info ----
-            sectionCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  sectionHeader("Basic Information", Icons.business),
-                  textField(
-                    businessNameController,
-                    "Business Name",
-                    icon: Icons.storefront,
-                  ),
-                  textField(
-                    ownerNameController,
-                    "Owner Name",
-                    icon: Icons.person,
-                  ),
-                  textField(
-                    contactController,
-                    "Contact Number",
-                    icon: Icons.phone,
-                    keyboardType: TextInputType.phone,
-                  ),
-                  textField(
-                    emailController,
-                    "Email Address",
-                    icon: Icons.email,
-                    keyboardType: TextInputType.emailAddress,
-                  ),
-                  textField(websiteController, "Website", icon: Icons.language),
-                ],
+            const Icon(
+              Icons.lock_outline,
+              size: 55,
+              color: Colors.red,
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Access Denied',
+              style: TextStyle(
+                fontSize: 21,
+                fontWeight: FontWeight.bold,
               ),
             ),
-
-            /// ---- Location ----
-            sectionCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  sectionHeader("Location Details", Icons.location_on),
-                  textField(
-                    addressController,
-                    "Address",
-                    icon: Icons.home,
-                    maxLines: 2,
-                  ),
-
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 15),
-                    child: DropdownButtonFormField<String>(
-                      initialValue: selectedDistrict,
-                      isExpanded: true,
-                      onChanged: isLoading
-                          ? null
-                          : (value) {
-                              setState(() {
-                                selectedDistrict = value;
-                                districtController.text = value ?? '';
-                              });
-                            },
-                      decoration: InputDecoration(
-                        labelText: 'District',
-                        prefixIcon: const Icon(Icons.map, size: 20),
-                        filled: true,
-                        fillColor: Colors.grey.shade50,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: Colors.grey.shade300),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: Colors.grey.shade300),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(
-                            color: Colors.indigo,
-                            width: 1.5,
-                          ),
-                        ),
-                      ),
-                      items: districts
-                          .map(
-                            (d) => DropdownMenuItem(value: d, child: Text(d)),
-                          )
-                          .toList(),
-                    ),
-                  ),
-
-                  textField(
-                    pincodeController,
-                    "Pincode",
-                    icon: Icons.location_on,
-                    keyboardType: TextInputType.number,
-                  ),
-                ],
-              ),
+            const SizedBox(height: 8),
+            const Text(
+              'Business Details is available only to active Business members.',
+              textAlign: TextAlign.center,
             ),
+            const SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(context);
+              },
+              child: const Text('Go Back'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
-            /// ---- Industry ----
-            sectionCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  sectionHeader("Industry Type", Icons.factory),
+  // --------------------------------------------------
+  // BUSINESS DETAILS FORM
+  // --------------------------------------------------
 
-                  DropdownButtonFormField<String>(
-                    initialValue: selectedIndustry,
+  Widget businessForm() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // BASIC INFORMATION
+          sectionCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                sectionHeader(
+                  'Basic Information',
+                  Icons.business,
+                ),
+                textField(
+                  businessNameController,
+                  'Business Name',
+                  icon: Icons.storefront,
+                ),
+                textField(
+                  ownerNameController,
+                  'Owner Name',
+                  icon: Icons.person,
+                ),
+                textField(
+                  contactController,
+                  'Contact Number',
+                  icon: Icons.phone,
+                  keyboardType: TextInputType.phone,
+                ),
+                textField(
+                  emailController,
+                  'Email Address',
+                  icon: Icons.email,
+                  keyboardType: TextInputType.emailAddress,
+                ),
+                textField(
+                  websiteController,
+                  'Website',
+                  icon: Icons.language,
+                ),
+              ],
+            ),
+          ),
+
+          // LOCATION DETAILS
+          sectionCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                sectionHeader(
+                  'Location Details',
+                  Icons.location_on,
+                ),
+                textField(
+                  addressController,
+                  'Address',
+                  icon: Icons.home,
+                  maxLines: 2,
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 15),
+                  child: DropdownButtonFormField<String>(
+                    initialValue: selectedDistrict,
                     isExpanded: true,
                     onChanged: isLoading
                         ? null
                         : (value) {
                             setState(() {
-                              selectedIndustry = value;
+                              selectedDistrict = value;
+                              districtController.text = value ?? '';
                             });
                           },
                     decoration: InputDecoration(
-                      labelText: 'Industry Type',
-                      prefixIcon: const Icon(Icons.category, size: 20),
+                      labelText: 'District',
+                      prefixIcon: const Icon(
+                        Icons.map,
+                        size: 20,
+                      ),
                       filled: true,
                       fillColor: Colors.grey.shade50,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(color: Colors.grey.shade300),
+                        borderSide: BorderSide(
+                          color: Colors.grey.shade300,
+                        ),
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(color: Colors.grey.shade300),
+                        borderSide: BorderSide(
+                          color: Colors.grey.shade300,
+                        ),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
@@ -528,95 +756,186 @@ class _BusinessDetailsScreenState extends State<BusinessDetailsScreen> {
                         ),
                       ),
                     ),
-                    items: industries
-                        .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+                    items: districts
+                        .map(
+                          (district) => DropdownMenuItem(
+                            value: district,
+                            child: Text(district),
+                          ),
+                        )
                         .toList(),
                   ),
-
-                  if (selectedIndustry == 'Other') ...[
-                    const SizedBox(height: 15),
-                    textField(
-                      otherIndustryController,
-                      'Enter Your Industry Type',
-                      icon: Icons.edit,
-                    ),
-                  ],
-
-                  const SizedBox(height: 5),
-
-                  textField(
-                    descriptionController,
-                    "Product & Service Description",
-                    icon: Icons.description,
-                    maxLines: 3,
-                  ),
-                ],
-              ),
-            ),
-
-            /// ---- Documents ----
-            sectionCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  sectionHeader("Documents", Icons.folder_open),
-
-                  uploadTile(
-                    icon: Icons.picture_as_pdf,
-                    label: pdfName ?? "Upload Company Profile PDF",
-                    color: Colors.redAccent,
-                    onTap: pickPdf,
-                  ),
-
-                  const SizedBox(height: 12),
-
-                  uploadTile(
-                    icon: Icons.photo,
-                    label: imageName ?? "Upload Visiting Card",
-                    color: Colors.blue,
-                    onTap: pickVisitingCard,
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 10),
-
-            SizedBox(
-              width: double.infinity,
-              height: 55,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.indigo,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
                 ),
-                onPressed: isLoading ? null : saveBusiness,
-                child: isLoading
-                    ? const SizedBox(
-                        height: 24,
-                        width: 24,
-                        child: CircularProgressIndicator(
-                          color: Colors.white,
-                          strokeWidth: 2.5,
+                textField(
+                  pincodeController,
+                  'Pincode',
+                  icon: Icons.location_on,
+                  keyboardType: TextInputType.number,
+                ),
+              ],
+            ),
+          ),
+
+          // INDUSTRY TYPE
+          sectionCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                sectionHeader(
+                  'Industry Type',
+                  Icons.factory,
+                ),
+                DropdownButtonFormField<String>(
+                  initialValue: selectedIndustry,
+                  isExpanded: true,
+                  onChanged: isLoading
+                      ? null
+                      : (value) {
+                          setState(() {
+                            selectedIndustry = value;
+                          });
+                        },
+                  decoration: InputDecoration(
+                    labelText: 'Industry Type',
+                    prefixIcon: const Icon(
+                      Icons.category,
+                      size: 20,
+                    ),
+                    filled: true,
+                    fillColor: Colors.grey.shade50,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(
+                        color: Colors.grey.shade300,
+                      ),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(
+                        color: Colors.grey.shade300,
+                      ),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(
+                        color: Colors.indigo,
+                        width: 1.5,
+                      ),
+                    ),
+                  ),
+                  items: industries
+                      .map(
+                        (industry) => DropdownMenuItem(
+                          value: industry,
+                          child: Text(industry),
                         ),
                       )
-                    : const Text(
-                        "SAVE & CONTINUE",
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
-              ),
+                      .toList(),
+                ),
+                if (selectedIndustry == 'Other') ...[
+                  const SizedBox(height: 15),
+                  textField(
+                    otherIndustryController,
+                    'Enter Your Industry Type',
+                    icon: Icons.edit,
+                  ),
+                ],
+                const SizedBox(height: 5),
+                textField(
+                  descriptionController,
+                  'Product & Service Description',
+                  icon: Icons.description,
+                  maxLines: 3,
+                ),
+              ],
             ),
+          ),
 
-            const SizedBox(height: 20),
-          ],
-        ),
+          // DOCUMENTS
+          sectionCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                sectionHeader(
+                  'Documents',
+                  Icons.folder_open,
+                ),
+                uploadTile(
+                  icon: Icons.picture_as_pdf,
+                  label: pdfName ?? 'Upload Company Profile PDF',
+                  color: Colors.redAccent,
+                  onTap: pickPdf,
+                ),
+                const SizedBox(height: 12),
+                uploadTile(
+                  icon: Icons.photo,
+                  label: imageName ?? 'Upload Visiting Card',
+                  color: Colors.blue,
+                  onTap: pickVisitingCard,
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 10),
+
+          // SAVE BUTTON
+          SizedBox(
+            width: double.infinity,
+            height: 55,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.indigo,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+              onPressed: isLoading ? null : saveBusiness,
+              child: isLoading
+                  ? const SizedBox(
+                      height: 24,
+                      width: 24,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2.5,
+                      ),
+                    )
+                  : const Text(
+                      'SAVE & CONTINUE',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+            ),
+          ),
+
+          const SizedBox(height: 20),
+        ],
       ),
+    );
+  }
+
+  // --------------------------------------------------
+  // MAIN BUILD
+  // --------------------------------------------------
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.grey.shade100,
+      appBar: AppBar(
+        title: const Text('Business Details'),
+        centerTitle: true,
+      ),
+      body: isCheckingAccess
+          ? const Center(
+              child: CircularProgressIndicator(),
+            )
+          : !isBusinessMember
+              ? accessDeniedView()
+              : businessForm(),
     );
   }
 }
